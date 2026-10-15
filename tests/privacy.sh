@@ -452,6 +452,226 @@ case_pre_push_empty_stdin_passes() {
     expect_no_deny_word "pre-push"
 }
 
+# ------------------------------------- review round 1 (criteria 11 to 15)
+
+# add_deny_entry <regex>: appends an entry to the throwaway denylist and sets
+# $added_rule to its rule id (denylist-<line number>).
+add_deny_entry() {
+    printf '%s\n' "$1" >>"$WS_DENYLIST"
+    added_rule="denylist-$(wc -l <"$WS_DENYLIST" | tr -d ' ')"
+}
+
+# expect_rule <label> <rule id>: the output shows that exact rule id.
+expect_rule() {
+    expect_shown "$1" "rule id $2" "(^|[^0-9A-Za-z-])$2([^0-9]|\$)"
+}
+
+# staged_deny_hit <file> <content>: a staged file with a denylisted word must
+# fail `staged` with rule id denylist-3 and without the word.
+staged_deny_hit() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    mkdir -p "$(dirname "$REPO/$1")"
+    stage_file "$1" "$2"
+    check staged || return 1
+    expect_rc_nonzero "staged $1" || return 1
+    expect_no_deny_word "staged $1" || return 1
+    expect_deny_rule "staged $1"
+}
+
+# 11: Betterleaks' default allowlists and filters must not drop denylist hits.
+
+case_deny_hit_in_svg() {
+    staged_deny_hit logo.svg '<svg><text>ZorblaxCorp</text></svg>'
+}
+
+case_deny_hit_in_lock_file() {
+    staged_deny_hit package-lock.json '{ "name": "ZorblaxCorp" }'
+}
+
+case_deny_hit_in_vendor_dir() {
+    staged_deny_hit vendor/lib/readme.txt "$DENY_CONTENT"
+}
+
+case_deny_hit_home_path() {
+    add_deny_entry '/home/zorblaxuser'
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    stage_file setup.sh 'cd /home/zorblaxuser/dev'
+    check staged || return 1
+    expect_rc_nonzero "staged /home/<user> path" || return 1
+    expect_no_deny_word "staged" || return 1
+    expect_rule "staged" "$added_rule"
+}
+
+# 12: no suppression from inside the repo.
+
+case_inline_allow_comments_ignored() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    for marker in betterleaks:allow gitleaks:allow; do
+        stage_file c.txt "ZorblaxCorp $marker"
+        check staged || return 1
+        expect_rc_nonzero "staged with $marker" || return 1
+        expect_no_deny_word "staged with $marker" || return 1
+        expect_deny_rule "staged with $marker" || return 1
+        git -C "$REPO" rm -q --cached c.txt
+    done
+}
+
+case_untracked_gitleaksignore_fails() {
+    commit_file 'Add notes' c.txt "$DENY_CONTENT"
+    sha=$(git -C "$REPO" rev-parse HEAD)
+    printf '%s:c.txt:%s:1\n' "$sha" "$DENY_RULE" >"$REPO/.gitleaksignore"
+    check history || return 1
+    expect_rc_nonzero "history with untracked .gitleaksignore" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_shown "history" "the name .gitleaksignore" '\.gitleaksignore'
+}
+
+case_committed_betterleaksignore_fails() {
+    commit_file 'Add notes' c.txt "$DENY_CONTENT"
+    sha=$(git -C "$REPO" rev-parse HEAD)
+    commit_file 'Ignore finding' .betterleaksignore "$sha:c.txt:$DENY_RULE:1"
+    check history || return 1
+    expect_rc_nonzero "history with committed .betterleaksignore" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_shown "history" "the name .betterleaksignore" '\.betterleaksignore'
+}
+
+# 13: content added only by a merge commit.
+
+case_evil_merge_fails_history() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    git -C "$REPO" checkout -q -b side
+    commit_file 'Side change' side.txt 'side'
+    git -C "$REPO" checkout -q main
+    commit_file 'Main change' main.txt 'main'
+    git -C "$REPO" merge -q --no-ff --no-commit side >/dev/null 2>&1
+    stage_file evil.txt "$DENY_CONTENT"
+    git -C "$REPO" commit -q -m 'Merge side'
+    git -C "$REPO" rev-parse -q --verify HEAD^2 >/dev/null ||
+        { fail "fixture: HEAD is not a merge commit"; return 1; }
+    check history || return 1
+    expect_rc_nonzero "history with word only in a merge" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_deny_rule "history"
+}
+
+# 14: metadata is checked against the denylist.
+
+# history_deny_hit <label> [rev...]: history (or all <rev>) must fail with
+# denylist-3 and without the word.
+history_deny_hit() {
+    label=$1
+    shift
+    check "$@" || return 1
+    expect_rc_nonzero "$label" || return 1
+    expect_no_deny_word "$label" || return 1
+    expect_deny_rule "$label"
+}
+
+case_commit_message_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    git -C "$REPO" commit -q --allow-empty -m "$DENY_CONTENT"
+    history_deny_hit "history with word in commit message" history
+}
+
+case_author_name_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    GIT_AUTHOR_NAME='ZorblaxCorp Bot' git -C "$REPO" commit -q --allow-empty \
+        -m 'Routine update'
+    history_deny_hit "history with word in author name" history
+}
+
+case_committer_name_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    GIT_COMMITTER_NAME='ZorblaxCorp Bot' git -C "$REPO" commit -q --allow-empty \
+        -m 'Routine update'
+    history_deny_hit "history with word in committer name" history
+}
+
+case_file_path_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_file 'Add notes' zorblaxcorp-notes.txt 'Nothing to see here.'
+    history_deny_hit "history with word in file name" history
+}
+
+case_dir_path_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    mkdir -p "$REPO/ZorblaxInc"
+    commit_file 'Add notes' ZorblaxInc/notes.txt 'Nothing to see here.'
+    history_deny_hit "history with word in directory name" history
+}
+
+# make_annotated_tag <message> [git -c option...]: clean commit on main and an
+# annotated tag v1 on it. Sets $tag_sha (the tag object) and $tag_short.
+make_annotated_tag() {
+    msg=$1
+    shift
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    git -C "$REPO" "$@" tag -a v1 -m "$msg"
+    tag_sha=$(git -C "$REPO" rev-parse refs/tags/v1)
+    tag_short=$(git -C "$REPO" rev-parse --short=7 refs/tags/v1)
+}
+
+case_tag_message_fails_all_tag() {
+    make_annotated_tag "$DENY_CONTENT"
+    history_deny_hit "all v1 with word in tag message" all v1
+}
+
+case_tag_message_fails_pre_push() {
+    make_annotated_tag "$DENY_CONTENT"
+    push_hook "refs/tags/v1 $tag_sha refs/tags/v1 $ZERO_SHA
+" || return 1
+    expect_rc_nonzero "pre-push refs/tags/v1" || return 1
+    expect_no_deny_word "pre-push" || return 1
+    expect_deny_rule "pre-push refs/tags/v1"
+}
+
+case_tagger_name_fails() {
+    make_annotated_tag 'Release one' -c user.name='ZorblaxCorp Bot'
+    history_deny_hit "history v1 with word in tagger name" history v1
+}
+
+case_tagger_email_fails_emails() {
+    make_annotated_tag 'Release one' -c user.email="$PRIVATE_EMAIL"
+    check emails v1 || return 1
+    expect_rc_nonzero "emails v1 with private tagger email" || return 1
+    expect_absent "emails v1" "$PRIVATE_EMAIL" || return 1
+    expect_absent "emails v1" "private-mail" || return 1
+    expect_shown "emails v1" "the tag ($tag_short or v1)" \
+        "$tag_short|(^|[^0-9A-Za-z.])v1([^0-9A-Za-z.]|\$)"
+}
+
+# 15: paths are never printed for a finding.
+
+case_paths_never_printed() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    mkdir -p "$REPO/qqdirmarker"
+    commit_file 'Add notes' qqdirmarker/qqpathmarker.txt "$DENY_CONTENT"
+    sha=$(git -C "$REPO" rev-parse --short=7 HEAD)
+    check history || return 1
+    expect_rc_nonzero "history" || return 1
+    expect_deny_rule "history" || return 1
+    expect_commit "history" "$sha" || return 1
+    expect_absent "history" qqpathmarker || return 1
+    expect_absent "history" qqdirmarker || return 1
+    expect_no_deny_word "history" || return 1
+    commit_file 'Clean notes' qqdirmarker/qqpathmarker.txt 'Nothing here.'
+    stage_file qqstagedmarker.txt "$DENY_CONTENT"
+    stage_file qqsecretmarker.ini "github_token = $FAKE_GH_PAT"
+    check staged || return 1
+    expect_rc_nonzero "staged" || return 1
+    expect_deny_rule "staged" || return 1
+    expect_secret_rule "staged" || return 1
+    expect_shown "staged" "the word index" 'index' || return 1
+    expect_absent "staged" qqstagedmarker || return 1
+    expect_absent "staged" qqsecretmarker || return 1
+    expect_absent "staged" "$gh_tail" || return 1
+    expect_no_deny_word "staged"
+}
+
+# 16 (scanner version checked on every run) is not tested here: it needs a
+# stub binary in the repo's own .cache/bin/, which tests must not touch.
+
 # ----------------------------------------------------------- hook checks
 
 # hook_calls <hook> <mode>: hook file runs privacy-check.sh with <mode>.
@@ -557,6 +777,24 @@ run_case "pre-push: dirty branch fails, redacted" case_pre_push_dirty_branch_fai
 run_case "pre-push: private email in pushed commits fails, names commit" case_pre_push_private_email_fails
 run_case "pre-push: deletion line passes" case_pre_push_deletion_passes
 run_case "pre-push: empty stdin passes" case_pre_push_empty_stdin_passes
+run_case "11: denylist hit in *.svg fails staged" case_deny_hit_in_svg
+run_case "11: denylist hit in package-lock.json fails staged" case_deny_hit_in_lock_file
+run_case "11: denylist hit under vendor/ fails staged" case_deny_hit_in_vendor_dir
+run_case "11: denylist entry matching /home/<user> fails staged" case_deny_hit_home_path
+run_case "12: inline betterleaks:allow / gitleaks:allow are ignored" case_inline_allow_comments_ignored
+run_case "12: untracked .gitleaksignore fails history, named" case_untracked_gitleaksignore_fails
+run_case "12: committed .betterleaksignore fails history, named" case_committed_betterleaksignore_fails
+run_case "13: content added only by a merge fails history" case_evil_merge_fails_history
+run_case "14: word in commit message fails history" case_commit_message_fails
+run_case "14: word in author name fails history" case_author_name_fails
+run_case "14: word in committer name fails history" case_committer_name_fails
+run_case "14: word in file name fails history" case_file_path_fails
+run_case "14: word in directory name fails history" case_dir_path_fails
+run_case "14: word in annotated tag message fails all v1" case_tag_message_fails_all_tag
+run_case "14: word in annotated tag message fails pre-push of the tag" case_tag_message_fails_pre_push
+run_case "14: word in tagger name fails history v1" case_tagger_name_fails
+run_case "14: private tagger email fails emails v1" case_tagger_email_fails_emails
+run_case "15: finding output never contains file or dir paths" case_paths_never_printed
 
 total=$((passed + failed))
 printf '\n%d of %d passed, %d failed\n' "$passed" "$total" "$failed"
