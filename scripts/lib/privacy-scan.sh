@@ -8,9 +8,10 @@
 # text is redacted, and neither paths nor metadata text are printed: a path
 # can contain a denylisted name, and CI logs are public.
 
-# The first line of a re-exported binary blob and of the metadata files.
+# The first line of every exported blob and of the metadata files.
 # Betterleaks skips files whose first bytes look binary (executables, gzip,
-# images); with this line in front it scans their bytes as text.
+# PDF, images); with this line in front it scans every byte as text, so
+# binary content and NUL bytes are covered. Hit lines are one less.
 TEXT_HEADER='privacy-check text view'
 
 prepare_scanner() {
@@ -22,14 +23,14 @@ prepare_scanner() {
 
 # run_scanner <config> <betterleaks command and args...>
 # Returns 0 when clean, 1 on findings (in $work/report), 2 on a scanner
-# error; the debug log is in $work/scan.log. Inline allow comments are
+# error; the log is in $work/scan.log. Inline allow comments are
 # ignored, and -i points to an empty dir so no ignore file is read.
 run_scanner() {
     config=$1
     shift
     rm -f "$work/report"
     "$SCANNER" "$@" --config "$config" --redact --no-banner --no-color \
-        --log-level debug --ignore-gitleaks-allow \
+        --ignore-gitleaks-allow \
         --gitleaks-ignore-path "$work/no-ignore" \
         --exit-code "$LEAKS_EXIT" --report-format template \
         --report-template "$work/report.tmpl" --report-path "$work/report" \
@@ -52,49 +53,26 @@ scanner_failed() {
     fi
 }
 
-# Appends "<blob id> <rule> <line>" per finding in $work/report to
-# $work/hits. Reported files are <dir>/<blob id>, or <dir>/<blob id>.zip!...
-# for a hit inside an archive. <offset> is subtracted from the line.
-collect_blob_hits() {
-    awk -F '\t' -v dir="$1/" -v offset="$2" '
-        NF {
-            f = substr($3, length(dir) + 1)
-            if (substr($3, 1, length(dir)) != dir || !match(f, /^[0-9a-f]+/)) next
-            print substr(f, 1, RLENGTH), $1, $2 - offset
-        }
-    ' "$work/report" >>"$work/hits"
-}
-
-# scan_blob_dir <label> <dir> <offset>: scans <dir> with both configs.
-scan_blob_dir() {
-    for config in defaults denylist; do
-        run_scanner "$work/$config.toml" dir "$2"
-        case $? in
-            1) collect_blob_hits "$2" "$3" ;;
-            2) scanner_failed "$1"; errors=1 ;;
-        esac
-    done
-}
-
-# scan_blobs <label> <history|staged>: scans $work/blobs. Blobs Betterleaks
-# skipped as binary are re-exported with the text header and scanned again,
-# so binary content and files with NUL bytes are covered. Compressed
-# archives other than zip are not unpacked.
+# scan_blobs <label> <history|staged>: scans $work/blobs (written by
+# export_blobs with the text header) with both configs. The scanner runs
+# inside that dir, so each reported file name is just the blob id.
 scan_blobs() {
     label=$1
     : >"$work/hits"
     errors=0
-    scan_blob_dir "$label" "$work/blobs" 0
-    sed -n 's|.*skipping binary file .*/\([0-9a-f]\{40,64\}\)$|\1|p' \
-        "$work/scan.log" | sort -u >"$work/binary-ids"
-    if [ -s "$work/binary-ids" ]; then
-        mkdir -p "$work/text"
-        while read -r oid; do
-            { printf '%s\n' "$TEXT_HEADER"; cat "$work/blobs/$oid"; } \
-                >"$work/text/$oid"
-        done <"$work/binary-ids"
-        scan_blob_dir "$label" "$work/text" 1
-    fi
+    for config in defaults denylist; do
+        (cd "$work/blobs" && run_scanner "$work/$config.toml" dir .)
+        case $? in
+            1)
+                awk -F '\t' 'NF { print $3, $1, $2 - 1 }' "$work/report" \
+                    >>"$work/hits"
+                ;;
+            2)
+                scanner_failed "$label"
+                errors=1
+                ;;
+        esac
+    done
     sort -u "$work/hits" | while read -r oid rule line; do
         if [ "$2" = staged ]; then
             where=index

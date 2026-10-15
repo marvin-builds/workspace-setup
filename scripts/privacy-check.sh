@@ -70,6 +70,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/privacy-check.XXXXXX") ||
     die "cannot create a temp dir"
 trap 'rm -rf "$work"' EXIT
 trap 'exit 1' HUP INT TERM
+work=$(cd "$work" && pwd) # absolute, since the scanner runs in a subdir
 
 # Always goes through the fetch script: it is a no-op when the cached binary
 # has the version from tools.lock and replaces it otherwise.
@@ -93,6 +94,7 @@ check_content() {
 # ------------------------------------------------------------------ main
 
 if [ "$mode" != staged ]; then
+    refuse_shallow
     resolve_scope "$@"
 fi
 if [ "$mode" != emails ]; then
@@ -108,7 +110,7 @@ case $mode in
     emails) check_emails || status=1 ;;
     all)
         check_content staged || status=1
-        rm -rf "$work/blobs" "$work/text"
+        rm -rf "$work/blobs"
         check_content history || status=1
         check_emails || status=1
         ;;

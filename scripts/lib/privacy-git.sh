@@ -6,7 +6,8 @@
 # on purpose. Files written to $work:
 #   commits  "<sha> <short sha>" per commit in scope
 #   tags     tag object shas in scope, every tag of a nested chain
-#   blobs/   one file per blob in scope, named by its object id
+#   blobs/   one file per blob in scope, named by its object id, with the
+#            scanner's text header (TEXT_HEADER) as first line
 
 # Runs git on the checked repo without anything that changes what git
 # reports: no system or global config, attributes or replace refs, and
@@ -43,6 +44,12 @@ tag_chain() {
     printf '%s\n' "$obj"
 }
 
+# Commits beyond a shallow boundary are missing, so history can't be checked.
+refuse_shallow() {
+    [ "$(g rev-parse --is-shallow-repository)" != true ] ||
+        die "this is a shallow clone, so history beyond its boundary can't be checked. Fetch full history first: git fetch --unshallow (in CI: actions/checkout with fetch-depth: 0)."
+}
+
 # resolve_scope [<rev>...]: sets $log_revs and writes commits and tags. Each
 # revision is resolved to a sha, so nothing from the arguments reaches git
 # as an option; an annotated tag stays in scope as its tag objects.
@@ -69,7 +76,8 @@ resolve_scope() {
 }
 
 # export_blobs <history|staged>: writes every blob in scope (reachable from
-# the scope, or in the index) to $work/blobs/<object id>, deduplicated.
+# the scope, or in the index) to $work/blobs/<object id>, deduplicated, each
+# behind the text header so the scanner never skips it as binary.
 export_blobs() {
     if [ "$1" = staged ]; then
         g ls-files --format='%(objectname)'
@@ -82,7 +90,10 @@ export_blobs() {
         die "cannot read the objects in scope"
     mkdir -p "$work/blobs"
     while read -r oid; do
-        g cat-file blob "$oid" >"$work/blobs/$oid" || die "cannot read blob $oid"
+        {
+            printf '%s\n' "$TEXT_HEADER"
+            g cat-file blob "$oid"
+        } >"$work/blobs/$oid" || die "cannot read blob $oid"
     done <"$work/blob-ids"
 }
 
