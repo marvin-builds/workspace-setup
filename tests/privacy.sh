@@ -839,6 +839,60 @@ case_staged_path_fails() {
     expect_deny_rule "staged"
 }
 
+# ------------------------------------- review round 3 (criteria 23 and 24)
+
+# 23: shallow clones fail with a hint, since history beyond the boundary
+# can't be checked. All commits are clean, so only shallowness can fail.
+
+make_shallow_clone() {
+    commit_file 'First' a.txt 'one'
+    commit_file 'Second' a.txt 'two'
+    commit_file 'Third' a.txt 'three'
+    git clone -q --depth 1 "file://$REPO" "$CASE_DIR/shallow" 2>/dev/null
+    REPO="$CASE_DIR/shallow"
+    [ "$(git -C "$REPO" rev-parse --is-shallow-repository)" = true ] ||
+        { fail "fixture: clone is not shallow"; return 1; }
+}
+
+# shallow_fails <mode>
+shallow_fails() {
+    make_shallow_clone || return 1
+    check "$1" || return 1
+    expect_rc_nonzero "$1 in a shallow clone" || return 1
+    grep -qi shallow "$OUT" ||
+        fail "$1: no hint mentioning shallow; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+}
+
+case_shallow_history() { shallow_fails history; }
+case_shallow_emails() { shallow_fails emails; }
+case_shallow_all() { shallow_fails all; }
+
+# 24: a PDF-like blob is scanned with correct line numbers, whatever TMPDIR.
+
+# staged_pdf_hit <label>
+staged_pdf_hit() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    printf '%%PDF-1.4\n ZorblaxCorp\n' >"$REPO/doc.pdf"
+    git -C "$REPO" add doc.pdf
+    check staged || return 1
+    expect_rc_nonzero "staged doc.pdf ($1)" || return 1
+    expect_no_deny_word "staged ($1)" || return 1
+    expect_deny_rule "staged ($1)" || return 1
+    expect_shown "staged ($1)" "line 2" 'line 2([^0-9]|$)' || return 1
+    expect_tmp_empty "after staged ($1)"
+}
+
+case_pdf_normal_tmpdir() {
+    staged_pdf_hit 'normal TMPDIR'
+}
+
+case_pdf_tmpdir_with_space() {
+    TMPDIR="$CASE_DIR/tmp with space"
+    mkdir -p "$TMPDIR"
+    export TMPDIR
+    staged_pdf_hit 'TMPDIR with a space'
+}
+
 # ----------------------------------------------------------- hook checks
 
 # hook_calls <hook> <mode>: hook file runs privacy-check.sh with <mode>.
@@ -976,6 +1030,11 @@ run_case "20: control byte in commit message: hit, no 0x01 in output" case_contr
 run_case "21: nested tag message fails history outer" case_nested_tag_history
 run_case "21: nested tag private tagger email fails emails outer" case_nested_tag_emails
 run_case "22: word in staged file name fails staged" case_staged_path_fails
+run_case "23: history fails in a shallow clone, with hint" case_shallow_history
+run_case "23: emails fails in a shallow clone, with hint" case_shallow_emails
+run_case "23: all fails in a shallow clone, with hint" case_shallow_all
+run_case "24: staged PDF hit reports line 2 (normal TMPDIR)" case_pdf_normal_tmpdir
+run_case "24: staged PDF hit reports line 2 (TMPDIR with a space)" case_pdf_tmpdir_with_space
 
 total=$((passed + failed))
 printf '\n%d of %d passed, %d failed\n' "$passed" "$total" "$failed"
