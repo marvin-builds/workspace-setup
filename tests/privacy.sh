@@ -23,12 +23,14 @@ DENY_CONTENT='Built for ZorblaxCorp only'
 NOREPLY_EMAIL='12345678+octotest@users.noreply.github.com'
 PRIVATE_EMAIL='jane.doe@private-mail.example'
 
-# Fake AWS access key id: AKIA + 16 chars from [A-Z2-7], high entropy, not
-# ending in EXAMPLE (the default allowlist). Assembled at runtime so this file
-# never contains the full token and the repo's own history scan stays clean.
-aws_head=AKIA
-aws_tail=Z7Q3VKX4LMN2PRTW
-FAKE_AWS_ID="${aws_head}${aws_tail}"
+# Fake GitHub personal access token: ghp_ + 36 high-entropy alnum chars.
+# Betterleaks v1.9.0 reports it on its own under the default rule github-pat
+# (a lone AWS key id is not reported: aws-access-token needs a matching
+# secret key nearby). Assembled at runtime so this file never contains the
+# full token and the repo's own history scan stays clean.
+gh_head=ghp_
+gh_tail=8kQz3Rw7NvXp2LmY9TbH4sJc6DfG1aEuK5oV
+FAKE_GH_PAT="${gh_head}${gh_tail}"
 
 passed=0
 failed=0
@@ -263,14 +265,13 @@ case_empty_denylist_fails() {
     grep -qi denylist "$OUT" || fail "staged: no hint mentioning the denylist"
 }
 
-case_fake_aws_key_fails_staged() {
+case_fake_github_token_fails_staged() {
     commit_file 'Add readme' README.md 'Just a harmless readme.'
-    stage_file config.ini "[default]
-aws_access_key_id = $FAKE_AWS_ID"
+    stage_file config.ini "github_token = $FAKE_GH_PAT"
     check staged || return 1
-    expect_rc_nonzero "staged with fake AWS key" || return 1
-    expect_absent "staged" "$FAKE_AWS_ID" || return 1
-    expect_absent "staged" "$aws_tail"
+    expect_rc_nonzero "staged with fake GitHub token" || return 1
+    expect_absent "staged" "$FAKE_GH_PAT" || return 1
+    expect_absent "staged" "$gh_tail"
 }
 
 case_no_temp_files_left() {
@@ -383,7 +384,7 @@ run_case "denylist: WS_DENYLIST pointing to missing file fails with hint" case_m
 run_case "denylist: no WS_DENYLIST and no default file fails with hint" case_default_denylist_path_missing_fails
 run_case "denylist: default XDG path is used without WS_DENYLIST" case_default_denylist_path_is_used
 run_case "denylist: only comments and blanks fails with hint" case_empty_denylist_fails
-run_case "staged: fake AWS access key fails, redacted" case_fake_aws_key_fails_staged
+run_case "staged: fake GitHub token (github-pat) fails, redacted" case_fake_github_token_fails_staged
 run_case "cleanup: no temp files left on pass, fail and error paths" case_no_temp_files_left
 
 total=$((passed + failed))
