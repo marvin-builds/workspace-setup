@@ -99,6 +99,35 @@ address.
     goes through `fetch-tools.sh`, which replaces a cached binary whose
     version differs from `tools.lock`.
 
+### Review round 2 (third round decided with me: scan objects, not diffs)
+
+Scanning `git diff`/`git log -p` output let attributes, config and replace
+refs hide content. Content is now read from git's objects instead.
+
+17. **Content scan reads objects.** `history` scans every blob reachable
+    from the scope (`git rev-list --objects <revs>` or `--all`); `staged`
+    scans the blobs in the index. Blobs are exported under their object
+    id, not their path, and scanned with both configs (defaults,
+    denylist). A hit is reported as rule id, blob short id, line, and the
+    commit that introduced the blob (`git log --find-object`, `index` for
+    staged). Binary content and files with NUL bytes are scanned; verify
+    against Betterleaks that they really are.
+18. **Hermetic git.** Every git call in the checks runs with
+    `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
+    `GIT_NO_REPLACE_OBJECTS=1` and `GIT_ATTR_NOSYSTEM=1`, plus `-c`
+    overrides for repo-local keys that change output (colour, quoting).
+    Must fail despite: `.gitattributes` with `-diff` or `binary`, a NUL
+    byte in a file, `color.ui=always`, `log.showRoot=false`, a replace ref
+    over a commit with a denylisted message, private email or content.
+19. **Ignore files** are detected when they are symlinks and regardless of
+    letter case (`.GitleaksIgnore`).
+20. **Metadata parsing takes no markers from user data.** A control byte
+    in a message, name or tag can neither hide a line nor end up in the
+    output.
+21. **Nested tags:** every tag object in a chain is checked (message,
+    tagger name, tagger email), not only the outermost.
+22. **`staged` checks staged paths** against the denylist.
+
 ## Files in scope
 
 `.chezmoiroot`, `home/.chezmoiversion`, `.gitattributes`, `.gitignore`,
@@ -127,6 +156,10 @@ address.
 - The generic-secret test plants a GitHub token (`github-pat`), because
   in v1.9.0 `aws-access-token` is a composite rule that ignores a lone key
   ID.
+- Content is scanned as git objects, not diffs (criterion 17), because
+  diff output depends on attributes, config and replace refs the scanned
+  repo or machine controls. Patching each case would leave the next
+  variant open.
 - No legitimate way to suppress a finding yet (criterion 12). If a false
   positive from the default rules shows up, the allowlist goes into the
   out-of-repo config, never into the repo.
