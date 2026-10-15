@@ -3,7 +3,9 @@
 This repo is the source of truth for how my machines are set up. The chezmoi
 source state lives in `home/` (`.chezmoiroot`); the root holds the
 bootstrap, tests and docs. The plan and implementation slices are in
-`docs/plan.md`; read it before starting work.
+`docs/plan.md`; read it before starting work. How work is split between an
+orchestrator and role agents (test writer, implementer, reviewer) is in
+`docs/workflow.md`.
 
 ## Change the machine only through this repo
 
