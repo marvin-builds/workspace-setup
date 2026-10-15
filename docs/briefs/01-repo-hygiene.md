@@ -128,6 +128,17 @@ refs hide content. Content is now read from git's objects instead.
     tagger name, tagger email), not only the outermost.
 22. **`staged` checks staged paths** against the denylist.
 
+### Review round 3 (handling decided with me)
+
+23. **Shallow clones fail.** `history`, `emails` and `all` fail with a hint
+    (fetch full history) when `git rev-parse --is-shallow-repository` is
+    `true`, since history beyond the boundary can't be checked.
+24. **No log parsing for binary files.** Every exported blob gets the
+    fixed header line, so Betterleaks never skips one as binary and the
+    result doesn't depend on its log format or the temp path (a space in
+    `TMPDIR` used to disable the rescan). Line numbers stay correct.
+25. Remove the code and comments that assume zip members are unpacked.
+
 ## Files in scope
 
 `.chezmoiroot`, `home/.chezmoiversion`, `.gitattributes`, `.gitignore`,
@@ -160,6 +171,12 @@ refs hide content. Content is now read from git's objects instead.
   diff output depends on attributes, config and replace refs the scanned
   repo or machine controls. Patching each case would leave the next
   variant open.
+- Content inside archives (zip-based files included) is not scanned; a
+  dotfiles repo has no reason to hold them.
+- UTF-16 text isn't matched; handled in the Windows phase (see plan).
+- The pre-push hook rescans all history reachable from the pushed commits
+  (about 27 s at 4000 commits). Fine for this repo; skipping commits
+  already on the remote is a later optimisation.
 - No legitimate way to suppress a finding yet (criterion 12). If a false
   positive from the default rules shows up, the allowlist goes into the
   out-of-repo config, never into the repo.

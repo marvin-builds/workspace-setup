@@ -299,7 +299,8 @@ green, PR.
 Later phases: **Windows** (`bootstrap.ps1`, winget/scoop columns, PowerShell
 profile incl. OneDrive paths and encoding, `ws.cmd`/`ws.ps1` shims and a
 per-command × per-shell compatibility matrix, WSL as `form=wsl`,
-`windows-latest` system job) and **macOS** (brew column + `brew bundle`,
+`windows-latest` system job, privacy check decodes UTF-16 files, which
+PowerShell 5 writes by default) and **macOS** (brew column + `brew bundle`,
 Xcode CLT in bootstrap, `defaults write` settings, `macos-latest` CI). macOS
 details, including the value of `mod`, are decided once a Mac is actually in
 use; until then only the data formats keep room for it.
