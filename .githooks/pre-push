@@ -1,0 +1,26 @@
+#!/bin/sh
+# Checks the commits being pushed: secrets and denylisted text in their
+# history, and GitHub noreply addresses as author and committer emails.
+# Local branches that are not pushed are not checked; CI checks every ref.
+# Enable per clone: git config core.hooksPath .githooks
+#
+# git passes one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+
+here=$(cd "$(dirname "$0")" && pwd) || exit 1
+
+shas=
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case $local_sha in
+        *[!0]*) shas="$shas $local_sha" ;; # all zeros is a deletion
+    esac
+done
+
+[ -n "$shas" ] || exit 0 # nothing to push
+
+status=0
+# shellcheck disable=SC2086 # $shas is a space-separated list of shas
+"$here/../scripts/privacy-check.sh" history $shas || status=1
+# shellcheck disable=SC2086
+"$here/../scripts/privacy-check.sh" emails $shas || status=1
+exit $status

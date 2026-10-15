@@ -1,0 +1,7 @@
+# Pinned tool downloads for scripts/fetch-tools.sh.
+# One line per release asset: <tool> <version> <os>_<arch> <sha256>
+# Checksums are copied from the release's checksums.txt.
+betterleaks 1.9.0 linux_arm64 1d39116e0a58dc94574715e2aa12a2dbd5062f193eee3fec011fef6ba06bd13b
+betterleaks 1.9.0 linux_x64 f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
+betterleaks 1.9.0 darwin_arm64 83dd7eaab13d44a1e8e347a17064cdef153a1478db473276d41b38d55613d3f2
+betterleaks 1.9.0 darwin_x64 68dfd83458d9e7f90663daa7a81c7f944083b170dae82e4f5f8d0581ed519ef1

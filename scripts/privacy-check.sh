@@ -1,0 +1,148 @@
+#!/bin/sh
+# Checks a git repo for private data before it reaches GitHub.
+#
+#   staged   scan the index for secrets and denylisted text
+#   history  scan commits the same way, plus their metadata (messages,
+#            author/committer/tagger names, paths, tag messages)
+#   emails   every author, committer and tagger email must be a GitHub
+#            noreply address
+#   all      all three
+#
+# history, emails and all take optional revisions: only commits reachable
+# from them, and the annotated tags among them, are checked (the pre-push
+# hook passes the shas being pushed). Without revisions every ref and every
+# annotated tag is checked (git log --all), as CI does.
+#
+# Runs on the repo of the current directory. The scanner is Betterleaks:
+# one scan with its default rules, one with only the denylist rules. The
+# denylist (one extended regex per line, case-insensitive, '#' comments and
+# blank lines ignored) is read from $WS_DENYLIST, else
+# ${XDG_CONFIG_HOME:-$HOME/.config}/ws/denylist. It never lives in the repo.
+#
+# Output is safe for public CI logs: matches are redacted, rules are named
+# denylist-<line number>, objects are named by short sha, and neither paths
+# nor emails are printed.
+#
+# Usage: scripts/privacy-check.sh staged
+#        scripts/privacy-check.sh <history|emails|all> [<rev>...]
+
+set -u
+
+TOOLS_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SCANNER="$TOOLS_ROOT/.cache/bin/betterleaks"
+FETCH="$TOOLS_ROOT/scripts/fetch-tools.sh"
+LEAKS_EXIT=3 # distinguishes "leaks found" from scanner errors (exit 1)
+NOREPLY_RE='^[0-9]+[+][^@]+@users[.]noreply[.]github[.]com$'
+
+usage() {
+    printf 'usage: %s staged\n       %s <history|emails|all> [<rev>...]\n' \
+        "$(basename "$0")" "$(basename "$0")" >&2
+    exit 2
+}
+
+die() {
+    printf 'privacy-check: %s\n' "$*" >&2
+    exit 1
+}
+
+say() {
+    printf 'privacy-check: %s\n' "$*"
+}
+
+. "$TOOLS_ROOT/scripts/lib/privacy-denylist.sh"
+. "$TOOLS_ROOT/scripts/lib/privacy-scan.sh"
+. "$TOOLS_ROOT/scripts/lib/privacy-git.sh"
+
+[ $# -ge 1 ] || usage
+mode=$1
+shift
+case $mode in
+    staged | history | emails | all) ;;
+    *) usage ;;
+esac
+[ "$mode" != staged ] || [ $# -eq 0 ] || usage
+
+top=$(git rev-parse --show-toplevel 2>/dev/null) ||
+    die "not inside a git work tree"
+
+# Scope. Each revision is resolved to a sha, so nothing from the arguments
+# reaches git or the scanner as an option. A revision that is an annotated
+# tag stays in scope as the tag object too (its message and tagger).
+log_revs=
+tag_objs=
+if [ $# -eq 0 ]; then
+    log_revs=--all
+    tag_objs=$(git -C "$top" for-each-ref \
+        --format='%(objecttype) %(objectname)' refs/tags |
+        awk '$1 == "tag" { print $2 }')
+else
+    for rev in "$@"; do
+        obj=$(git -C "$top" rev-parse --verify --quiet --end-of-options "$rev^{object}") ||
+            die "not a revision: $rev"
+        sha=$(git -C "$top" rev-parse --verify --quiet "$obj^{commit}") ||
+            die "not a commit or a tag of one: $rev"
+        log_revs="$log_revs $sha"
+        if [ "$(git -C "$top" cat-file -t "$obj")" = tag ]; then
+            tag_objs="$tag_objs $obj"
+        fi
+    done
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/privacy-check.XXXXXX") ||
+    die "cannot create a temp dir"
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+
+# Always goes through the fetch script: it is a no-op when the cached binary
+# has the version from tools.lock and replaces it otherwise.
+ensure_scanner() {
+    "$FETCH" >&2 || die "cannot provide Betterleaks; run $FETCH and retry."
+    [ -x "$SCANNER" ] || die "Betterleaks not found at $SCANNER; run $FETCH."
+}
+
+check_staged() {
+    scan_git staged --pre-commit --staged
+}
+
+# --diff-merges=first-parent makes git log -p show each merge as its diff
+# against the first parent, so content only a merge adds (an evil merge or a
+# conflict resolution) is scanned. It is one diff per merge, unlike -m (one
+# per parent); the other parent's diff repeats changes that the commits on
+# the first-parent side are already scanned for.
+check_history() {
+    status_h=0
+    scan_git history "--log-opts=--diff-merges=first-parent $log_revs" ||
+        status_h=1
+    scan_metadata metadata || status_h=1
+    return $status_h
+}
+
+# ------------------------------------------------------------------ main
+
+status=0
+case $mode in
+    staged | history | all)
+        build_configs
+        ensure_scanner
+        write_report_template
+        with_commits=0
+        if [ "$mode" != staged ]; then
+            with_commits=1
+            list_paths
+            collect_metadata
+        fi
+        check_ignore_files $with_commits || status=1
+        ;;
+esac
+
+case $mode in
+    staged) check_staged || status=1 ;;
+    history) check_history || status=1 ;;
+    emails) check_emails || status=1 ;;
+    all)
+        check_staged || status=1
+        check_history || status=1
+        check_emails || status=1
+        ;;
+esac
+exit $status
