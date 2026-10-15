@@ -258,7 +258,10 @@ green, PR.
    `expect.yaml` format (incl. smoke commands, source paths, `absent`,
    role/form filters), `ws` dispatcher + `ws doctor` (drift report included),
    CI system job in a minimal container as a non-root user with both
-   idempotency checks, runner-VM job, weekly schedule.
+   idempotency checks, runner-VM job, weekly schedule. Hooks convention:
+   a repo that ships `.githooks/` gets `core.hooksPath=.githooks`;
+   bootstrap applies it to the setup repo it cloned, and `ws doctor`
+   flags clones with `.githooks/` but without the setting.
 4. **Shell base.** Thin bashrc sourcing `~/.config/shell/*.sh` and the
    untracked `local/` drop-in, PATH for `~/.local/bin`, starship, emacs-mode
    line editing, first dated migration script that removes the old marker
@@ -282,13 +285,15 @@ green, PR.
    layer shadowing; `wezterm show-keys` assertion in CI. Then generate
    `wezterm.lua` from it. Add the `gsettings` shortcut check to `ws doctor`.
 9. **ws helpers.** `ws clone`, `ws config`, `ws help`, standalone `slice`.
+   `ws clone` applies the hooks convention from slice 3 to every clone.
 10. **AI/Claude wiring.** Marketplace + plugin install via `enabledPlugins`/
     `extraKnownMarketplaces`, `settings.json` merge via `modify_` template
     with the rules from M3 (array semantics, ownership record, no diff when
     unchanged, missing file, schemastore validation in CI).
 11. **Secrets.** Bitwarden via `rbw` (caches the unlock, so one apply doesn't
     prompt repeatedly) and chezmoi's `rbw` template functions, with a fake
-    `rbw` on PATH in CI; the denylist as a Bitwarden item; SSH and signing
+    `rbw` on PATH in CI; the denylist as a Bitwarden item that chezmoi
+    renders to `~/.config/ws/denylist` (mode 600) on apply; SSH and signing
     keys through Bitwarden's SSH agent.
 12. **Parity and cutover.** Walk the old repo's inventory, confirm every item
     is covered by `expect.yaml`, upgrade test from the old repo's state,
