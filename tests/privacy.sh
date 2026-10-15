@@ -672,6 +672,173 @@ case_paths_never_printed() {
 # 16 (scanner version checked on every run) is not tested here: it needs a
 # stub binary in the repo's own .cache/bin/, which tests must not touch.
 
+# ------------------------------------- review round 2 (criteria 17 to 22)
+
+# staged_then_history_hit <label>: $REPO has a staged denylist hit in
+# notes.txt. `staged` must fail, then after committing it `history` must
+# fail, both with denylist-3 and without the word.
+staged_then_history_hit() {
+    check staged || return 1
+    expect_rc_nonzero "staged ($1)" || return 1
+    expect_no_deny_word "staged ($1)" || return 1
+    expect_deny_rule "staged ($1)" || return 1
+    git -C "$REPO" commit -q -m 'Add notes'
+    check history || return 1
+    expect_rc_nonzero "history ($1)" || return 1
+    expect_no_deny_word "history ($1)" || return 1
+    expect_deny_rule "history ($1)"
+}
+
+case_attr_no_diff_hides_nothing() {
+    commit_file 'Add attributes' .gitattributes '*.txt -diff'
+    stage_file notes.txt "$DENY_CONTENT"
+    staged_then_history_hit '*.txt -diff'
+}
+
+case_attr_binary_hides_nothing() {
+    commit_file 'Add attributes' .gitattributes '*.txt binary'
+    stage_file notes.txt "$DENY_CONTENT"
+    staged_then_history_hit '*.txt binary'
+}
+
+case_nul_byte_file_scanned() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    printf 'ZorblaxCorp\000\n' >"$REPO/notes.txt"
+    git -C "$REPO" add notes.txt
+    staged_then_history_hit 'file with NUL byte'
+}
+
+case_color_ui_always() {
+    git -C "$REPO" config color.ui always
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    stage_file notes.txt "$DENY_CONTENT"
+    staged_then_history_hit 'color.ui=always'
+}
+
+case_log_showroot_false() {
+    git -C "$REPO" config log.showRoot false
+    commit_file 'Add notes' notes.txt "$DENY_CONTENT"
+    history_deny_hit "history, single root commit, log.showRoot=false" history
+}
+
+# make_replaced_commit: main has a clean commit, then $bad (word in message,
+# private author email), which a replace ref hides behind a clean commit.
+make_replaced_commit() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    git -C "$REPO" -c user.email="$PRIVATE_EMAIL" commit -q --allow-empty \
+        -m "$DENY_CONTENT"
+    bad=$(git -C "$REPO" rev-parse HEAD)
+    bad_short=$(git -C "$REPO" rev-parse --short=7 HEAD)
+    clean=$(git -C "$REPO" commit-tree -p HEAD~1 -m clean 'HEAD^{tree}')
+    git -C "$REPO" replace "$bad" "$clean"
+}
+
+case_replace_ref_pre_push() {
+    make_replaced_commit
+    push_hook "refs/heads/main $bad refs/heads/main $ZERO_SHA
+" || return 1
+    expect_rc_nonzero "pre-push of a replaced commit" || return 1
+    expect_no_deny_word "pre-push" || return 1
+    expect_absent "pre-push" "$PRIVATE_EMAIL" || return 1
+    expect_deny_rule "pre-push of a replaced commit"
+}
+
+case_replace_ref_emails() {
+    make_replaced_commit
+    check emails "$bad" || return 1
+    expect_rc_nonzero "emails <replaced commit>" || return 1
+    expect_absent "emails" "$PRIVATE_EMAIL" || return 1
+    expect_commit "emails <replaced commit>" "$bad_short"
+}
+
+case_hit_names_introducing_commit_and_blob() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_file 'Add notes' notes.txt "$DENY_CONTENT"
+    intro_short=$(git -C "$REPO" rev-parse --short=7 HEAD)
+    blob_short=$(git -C "$REPO" rev-parse --short=7 HEAD:notes.txt)
+    commit_file 'Later change' other.txt 'Unrelated.'
+    commit_file 'Even later' other.txt 'Still unrelated.'
+    check history || return 1
+    expect_rc_nonzero "history" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_deny_rule "history" || return 1
+    expect_commit "history (introducing commit)" "$intro_short" || return 1
+    expect_shown "history" "blob $blob_short" "$blob_short"
+}
+
+# 19: ignore files as symlinks and in any letter case.
+
+case_symlinked_gitleaksignore_fails() {
+    commit_file 'Add notes' c.txt "$DENY_CONTENT"
+    sha=$(git -C "$REPO" rev-parse HEAD)
+    printf '%s:c.txt:%s:1\n' "$sha" "$DENY_RULE" >"$CASE_DIR/fp"
+    ln -s ../fp "$REPO/.gitleaksignore"
+    check history || return 1
+    expect_rc_nonzero "history with symlinked .gitleaksignore" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_shown "history" "the name .gitleaksignore" '\.gitleaksignore'
+}
+
+case_mixed_case_gitleaksignore_fails() {
+    commit_file 'Add notes' c.txt "$DENY_CONTENT"
+    sha=$(git -C "$REPO" rev-parse HEAD)
+    printf '%s:c.txt:%s:1\n' "$sha" "$DENY_RULE" >"$REPO/.GitleaksIgnore"
+    check history || return 1
+    expect_rc_nonzero "history with .GitleaksIgnore" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_shown "history" "the name .GitleaksIgnore" '\.[Gg]itleaks[Ii]gnore'
+}
+
+# 20: control bytes in metadata neither hide a line nor reach the output.
+
+case_control_byte_in_message() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    printf 'Subject\n\n\001ZorblaxCorp\n' >"$CASE_DIR/msg"
+    git -C "$REPO" commit -q --allow-empty -F "$CASE_DIR/msg"
+    history_deny_hit "history with control byte before word" history || return 1
+    if grep -q "$(printf '\001')" "$OUT"; then
+        fail "history: output contains byte 0x01"
+        return 1
+    fi
+}
+
+# 21: every tag object in a chain is checked.
+
+make_nested_tag() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    git -C "$REPO" -c user.email="$PRIVATE_EMAIL" tag -a inner -m "$DENY_CONTENT"
+    inner_short=$(git -C "$REPO" rev-parse --short=7 refs/tags/inner)
+    git -C "$REPO" -c advice.nestedTag=false tag -a outer -m outer inner \
+        2>/dev/null
+    git -C "$REPO" tag -d inner >/dev/null
+    outer_short=$(git -C "$REPO" rev-parse --short=7 refs/tags/outer)
+}
+
+case_nested_tag_history() {
+    make_nested_tag
+    history_deny_hit "history outer (word in inner tag)" history outer
+}
+
+case_nested_tag_emails() {
+    make_nested_tag
+    check emails outer || return 1
+    expect_rc_nonzero "emails outer (private inner tagger)" || return 1
+    expect_absent "emails outer" "$PRIVATE_EMAIL" || return 1
+    expect_shown "emails outer" "the tag ($inner_short, $outer_short or a tag name)" \
+        "$inner_short|$outer_short|(^|[^0-9A-Za-z.])(inner|outer)([^0-9A-Za-z.]|\$)"
+}
+
+# 22: staged paths are checked.
+
+case_staged_path_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    stage_file zorblaxinc.txt 'Nothing to see here.'
+    check staged || return 1
+    expect_rc_nonzero "staged with word in file name" || return 1
+    expect_no_deny_word "staged" || return 1
+    expect_deny_rule "staged"
+}
+
 # ----------------------------------------------------------- hook checks
 
 # hook_calls <hook> <mode>: hook file runs privacy-check.sh with <mode>.
@@ -795,6 +962,20 @@ run_case "14: word in annotated tag message fails pre-push of the tag" case_tag_
 run_case "14: word in tagger name fails history v1" case_tagger_name_fails
 run_case "14: private tagger email fails emails v1" case_tagger_email_fails_emails
 run_case "15: finding output never contains file or dir paths" case_paths_never_printed
+run_case "18: .gitattributes '*.txt -diff' hides nothing" case_attr_no_diff_hides_nothing
+run_case "18: .gitattributes '*.txt binary' hides nothing" case_attr_binary_hides_nothing
+run_case "17: file with a NUL byte is scanned" case_nul_byte_file_scanned
+run_case "18: color.ui=always does not hide hits" case_color_ui_always
+run_case "18: log.showRoot=false does not hide a root commit" case_log_showroot_false
+run_case "18: replace ref does not hide a pushed commit (pre-push)" case_replace_ref_pre_push
+run_case "18: replace ref does not hide a private email (emails <rev>)" case_replace_ref_emails
+run_case "17: history hit names introducing commit and blob" case_hit_names_introducing_commit_and_blob
+run_case "19: symlinked .gitleaksignore fails history, named" case_symlinked_gitleaksignore_fails
+run_case "19: .GitleaksIgnore (mixed case) fails history, named" case_mixed_case_gitleaksignore_fails
+run_case "20: control byte in commit message: hit, no 0x01 in output" case_control_byte_in_message
+run_case "21: nested tag message fails history outer" case_nested_tag_history
+run_case "21: nested tag private tagger email fails emails outer" case_nested_tag_emails
+run_case "22: word in staged file name fails staged" case_staged_path_fails
 
 total=$((passed + failed))
 printf '\n%d of %d passed, %d failed\n' "$passed" "$total" "$failed"
