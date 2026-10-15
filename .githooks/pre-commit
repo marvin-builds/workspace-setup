@@ -1,0 +1,5 @@
+#!/bin/sh
+# Scans staged changes for secrets and denylisted text.
+# Enable per clone: git config core.hooksPath .githooks
+here=$(cd "$(dirname "$0")" && pwd) || exit 1
+exec "$here/../scripts/privacy-check.sh" staged

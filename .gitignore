@@ -1,0 +1,14 @@
+# Downloaded tools (scripts/fetch-tools.sh)
+.cache/
+
+# Editors
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
