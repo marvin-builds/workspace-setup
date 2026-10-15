@@ -19,6 +19,9 @@ CHECK="$REPO_ROOT/scripts/privacy-check.sh"
 DENY_WORD=zorblaxcorp
 DENY_ENTRY='zorblax(corp|inc)'
 DENY_CONTENT='Built for ZorblaxCorp only'
+# setup_case writes the entry on line 3 of the throwaway denylist (after a
+# comment and a blank line), so a hit must report rule id denylist-3.
+DENY_RULE=denylist-3
 
 NOREPLY_EMAIL='12345678+octotest@users.noreply.github.com'
 PRIVATE_EMAIL='jane.doe@private-mail.example'
@@ -98,6 +101,7 @@ setup_case() {
 
     REPO="$CASE_DIR/repo"
     git -C "$REPO" init -q
+    git -C "$REPO" symbolic-ref HEAD refs/heads/main
     git -C "$REPO" config user.name 'Test User'
     git -C "$REPO" config user.email "$NOREPLY_EMAIL"
     git -C "$REPO" config commit.gpgsign false
@@ -116,7 +120,42 @@ stage_file() {
     git -C "$REPO" add "$1"
 }
 
-# check <mode>: runs the script under test in $REPO, output to $OUT, sets $rc.
+# make_dirty_side_branch: main gets a clean commit; branch "backup" (not
+# checked out afterwards) gets a commit with a private author email and a
+# denylisted word (in that order). Sets $main_sha, $side_sha (tip of backup)
+# and $priv_sha/$priv_short (the private-email commit, parent of the tip).
+make_dirty_side_branch() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    main_sha=$(git -C "$REPO" rev-parse HEAD)
+    git -C "$REPO" checkout -q -b backup
+    git -C "$REPO" -c user.email="$PRIVATE_EMAIL" commit -q --allow-empty \
+        -m 'Backup before rewrite'
+    commit_file 'Old notes' notes.txt "$DENY_CONTENT"
+    side_sha=$(git -C "$REPO" rev-parse HEAD)
+    priv_sha=$(git -C "$REPO" rev-parse HEAD~1)
+    priv_short=$(git -C "$REPO" rev-parse --short=7 HEAD~1)
+    git -C "$REPO" checkout -q main
+}
+
+ZERO_SHA=0000000000000000000000000000000000000000
+HOOK_PRE_PUSH="$REPO_ROOT/.githooks/pre-push"
+
+# push_hook <stdin text>: runs the real pre-push hook (from its place in this
+# repo, not copied) with the throwaway repo as cwd, output to $OUT, sets $rc.
+push_hook() {
+    if [ ! -x "$HOOK_PRE_PUSH" ]; then
+        fail "hook missing or not executable: .githooks/pre-push"
+        return 1
+    fi
+    rc=0
+    printf '%s' "$1" >"$CASE_DIR/push-stdin"
+    (cd "$REPO" && "$HOOK_PRE_PUSH" origin "https://example.invalid/repo.git" \
+        <"$CASE_DIR/push-stdin") >"$OUT" 2>&1 || rc=$?
+    return 0
+}
+
+# check <mode> [rev...]: runs the script under test in $REPO, output to $OUT,
+# sets $rc.
 check() {
     if [ ! -f "$CHECK" ]; then
         fail "script missing: scripts/privacy-check.sh"
@@ -127,7 +166,7 @@ check() {
         return 1
     fi
     rc=0
-    (cd "$REPO" && "$CHECK" "$1") >"$OUT" 2>&1 || rc=$?
+    (cd "$REPO" && "$CHECK" "$@") >"$OUT" 2>&1 || rc=$?
     return 0
 }
 
@@ -153,6 +192,33 @@ expect_no_deny_word() {
     expect_absent "$1" zorblax
 }
 
+# Evidence that a failure is a real finding, not an error such as a usage
+# message or a missing script.
+
+# expect_shown <label> <what> <extended regex>
+expect_shown() {
+    grep -qE -- "$3" "$OUT" && return 0
+    fail "$1: output lacks $2; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+}
+
+expect_deny_rule() {
+    expect_shown "$1" "rule id $DENY_RULE" "(^|[^0-9A-Za-z-])$DENY_RULE([^0-9]|\$)"
+}
+
+expect_secret_rule() {
+    expect_shown "$1" "rule id github-pat" 'github-pat'
+}
+
+# expect_commit <label> <short sha>
+expect_commit() {
+    expect_shown "$1" "commit $2" "$2"
+}
+
+expect_denylist_hint() {
+    grep -qi denylist "$OUT" && return 0
+    fail "$1: no hint mentioning the denylist; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+}
+
 expect_tmp_empty() {
     if [ -n "$(ls -A "$TMPDIR")" ]; then
         fail "$1: temp files left in TMPDIR: $(ls -A "$TMPDIR" | tr '\n' ' ')"
@@ -175,7 +241,8 @@ case_staged_deny_word_fails() {
     stage_file notes.txt "$DENY_CONTENT"
     check staged || return 1
     expect_rc_nonzero "staged" || return 1
-    expect_no_deny_word "staged"
+    expect_no_deny_word "staged" || return 1
+    expect_deny_rule "staged"
 }
 
 case_old_commit_deny_word_fails_history() {
@@ -186,7 +253,8 @@ case_old_commit_deny_word_fails_history() {
     expect_no_deny_word "staged" || return 1
     check history || return 1
     expect_rc_nonzero "history" || return 1
-    expect_no_deny_word "history"
+    expect_no_deny_word "history" || return 1
+    expect_deny_rule "history"
 }
 
 case_private_author_email_fails() {
@@ -197,7 +265,7 @@ case_private_author_email_fails() {
     expect_rc_nonzero "emails" || return 1
     expect_absent "emails" "$PRIVATE_EMAIL" || return 1
     expect_absent "emails" "private-mail" || return 1
-    grep -qF "$sha" "$OUT" || fail "emails: output does not name commit $sha"
+    expect_commit "emails" "$sha"
 }
 
 case_private_committer_email_fails() {
@@ -208,7 +276,7 @@ case_private_committer_email_fails() {
     check emails || return 1
     expect_rc_nonzero "emails" || return 1
     expect_absent "emails" "$PRIVATE_EMAIL" || return 1
-    grep -qF "$sha" "$OUT" || fail "emails: output does not name commit $sha"
+    expect_commit "emails" "$sha"
 }
 
 case_private_email_on_other_branch_fails() {
@@ -216,10 +284,12 @@ case_private_email_on_other_branch_fails() {
     git -C "$REPO" checkout -q -b side
     git -C "$REPO" config user.email "$PRIVATE_EMAIL"
     commit_file 'Side change' side.txt 'side'
+    sha=$(git -C "$REPO" rev-parse --short=7 HEAD)
     git -C "$REPO" checkout -q -
     check emails || return 1
     expect_rc_nonzero "emails (git log --all)" || return 1
-    expect_absent "emails" "$PRIVATE_EMAIL"
+    expect_absent "emails" "$PRIVATE_EMAIL" || return 1
+    expect_commit "emails" "$sha"
 }
 
 case_noreply_email_passes() {
@@ -234,7 +304,7 @@ case_missing_denylist_fails() {
     rm -f "$WS_DENYLIST"
     check staged || return 1
     expect_rc_nonzero "staged with WS_DENYLIST pointing to missing file" || return 1
-    grep -qi denylist "$OUT" || fail "staged: no hint mentioning the denylist"
+    expect_denylist_hint "staged"
 }
 
 case_default_denylist_path_missing_fails() {
@@ -242,7 +312,7 @@ case_default_denylist_path_missing_fails() {
     unset WS_DENYLIST
     check history || return 1
     expect_rc_nonzero "history without WS_DENYLIST and no XDG denylist" || return 1
-    grep -qi denylist "$OUT" || fail "history: no hint mentioning the denylist"
+    expect_denylist_hint "history"
 }
 
 case_default_denylist_path_is_used() {
@@ -254,7 +324,8 @@ case_default_denylist_path_is_used() {
     stage_file notes.txt "$DENY_CONTENT"
     check staged || return 1
     expect_rc_nonzero "staged with XDG denylist" || return 1
-    expect_no_deny_word "staged"
+    expect_no_deny_word "staged" || return 1
+    expect_deny_rule "staged"
 }
 
 case_empty_denylist_fails() {
@@ -262,7 +333,7 @@ case_empty_denylist_fails() {
     printf '# only a comment\n\n   \n' >"$WS_DENYLIST"
     check staged || return 1
     expect_rc_nonzero "staged with denylist of only comments/blanks" || return 1
-    grep -qi denylist "$OUT" || fail "staged: no hint mentioning the denylist"
+    expect_denylist_hint "staged"
 }
 
 case_fake_github_token_fails_staged() {
@@ -271,7 +342,8 @@ case_fake_github_token_fails_staged() {
     check staged || return 1
     expect_rc_nonzero "staged with fake GitHub token" || return 1
     expect_absent "staged" "$FAKE_GH_PAT" || return 1
-    expect_absent "staged" "$gh_tail"
+    expect_absent "staged" "$gh_tail" || return 1
+    expect_secret_rule "staged"
 }
 
 case_no_temp_files_left() {
@@ -282,13 +354,102 @@ case_no_temp_files_left() {
     stage_file notes.txt "$DENY_CONTENT"
     check staged || return 1
     expect_rc_nonzero "staged (deny word)" || return 1
+    expect_deny_rule "staged (deny word)" || return 1
     expect_tmp_empty "after failing staged" || return 1
     check history || return 1
     expect_tmp_empty "after history" || return 1
     printf '# empty\n' >"$WS_DENYLIST"
     check staged || return 1
     expect_rc_nonzero "staged (empty denylist)" || return 1
+    expect_denylist_hint "staged (empty denylist)" || return 1
     expect_tmp_empty "after empty-denylist error"
+}
+
+# ------------------------------------------- revision scope (<mode> <rev>)
+
+case_emails_rev_skips_unreachable_branch() {
+    make_dirty_side_branch
+    check emails main || return 1
+    expect_rc_zero "emails main (private email only on backup)" || return 1
+    expect_absent "emails" "$PRIVATE_EMAIL"
+}
+
+case_emails_rev_fails_when_reachable() {
+    make_dirty_side_branch
+    check emails backup || return 1
+    expect_rc_nonzero "emails backup" || return 1
+    expect_absent "emails" "$PRIVATE_EMAIL" || return 1
+    expect_commit "emails backup" "$priv_short"
+}
+
+case_history_rev_skips_unreachable_branch() {
+    make_dirty_side_branch
+    check history main || return 1
+    expect_rc_zero "history main (word only on backup)" || return 1
+    expect_no_deny_word "history"
+}
+
+case_history_rev_fails_when_reachable() {
+    make_dirty_side_branch
+    check history "$side_sha" || return 1
+    expect_rc_nonzero "history <backup sha>" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_deny_rule "history <backup sha>"
+}
+
+case_history_no_rev_covers_all_refs() {
+    make_dirty_side_branch
+    check history || return 1
+    expect_rc_nonzero "history with no rev (word only on backup)" || return 1
+    expect_no_deny_word "history" || return 1
+    expect_deny_rule "history with no rev"
+}
+
+# ------------------------------------------------------ pre-push behaviour
+
+case_pre_push_clean_branch_passes() {
+    make_dirty_side_branch
+    push_hook "refs/heads/main $main_sha refs/heads/main $ZERO_SHA
+" || return 1
+    expect_rc_zero "pre-push main (dirty backup branch not pushed)" || return 1
+    expect_no_deny_word "pre-push" || return 1
+    expect_absent "pre-push" "$PRIVATE_EMAIL"
+}
+
+case_pre_push_dirty_branch_fails() {
+    make_dirty_side_branch
+    push_hook "refs/heads/backup $side_sha refs/heads/backup $ZERO_SHA
+" || return 1
+    expect_rc_nonzero "pre-push backup" || return 1
+    expect_no_deny_word "pre-push" || return 1
+    expect_absent "pre-push" "$PRIVATE_EMAIL" || return 1
+    expect_deny_rule "pre-push backup"
+}
+
+case_pre_push_private_email_fails() {
+    # Push only up to the private-email commit, which has no denylisted word,
+    # so the email check alone must catch it.
+    make_dirty_side_branch
+    push_hook "refs/heads/backup $priv_sha refs/heads/backup $ZERO_SHA
+" || return 1
+    expect_rc_nonzero "pre-push backup~1 (private email only)" || return 1
+    expect_absent "pre-push" "$PRIVATE_EMAIL" || return 1
+    expect_commit "pre-push backup~1" "$priv_short"
+}
+
+case_pre_push_deletion_passes() {
+    make_dirty_side_branch
+    push_hook "(delete) $ZERO_SHA refs/heads/backup $side_sha
+" || return 1
+    expect_rc_zero "pre-push deleting backup" || return 1
+    expect_no_deny_word "pre-push"
+}
+
+case_pre_push_empty_stdin_passes() {
+    make_dirty_side_branch
+    push_hook "" || return 1
+    expect_rc_zero "pre-push with nothing to push" || return 1
+    expect_no_deny_word "pre-push"
 }
 
 # ----------------------------------------------------------- hook checks
@@ -386,6 +547,16 @@ run_case "denylist: default XDG path is used without WS_DENYLIST" case_default_d
 run_case "denylist: only comments and blanks fails with hint" case_empty_denylist_fails
 run_case "staged: fake GitHub token (github-pat) fails, redacted" case_fake_github_token_fails_staged
 run_case "cleanup: no temp files left on pass, fail and error paths" case_no_temp_files_left
+run_case "scope: emails <rev> ignores private email on unreachable branch" case_emails_rev_skips_unreachable_branch
+run_case "scope: emails <rev> fails when private email is reachable" case_emails_rev_fails_when_reachable
+run_case "scope: history <rev> ignores word on unreachable branch" case_history_rev_skips_unreachable_branch
+run_case "scope: history <rev> fails when word is reachable, redacted" case_history_rev_fails_when_reachable
+run_case "scope: history without rev covers all refs" case_history_no_rev_covers_all_refs
+run_case "pre-push: clean branch passes while a dirty branch exists locally" case_pre_push_clean_branch_passes
+run_case "pre-push: dirty branch fails, redacted" case_pre_push_dirty_branch_fails
+run_case "pre-push: private email in pushed commits fails, names commit" case_pre_push_private_email_fails
+run_case "pre-push: deletion line passes" case_pre_push_deletion_passes
+run_case "pre-push: empty stdin passes" case_pre_push_empty_stdin_passes
 
 total=$((passed + failed))
 printf '\n%d of %d passed, %d failed\n' "$passed" "$total" "$failed"
