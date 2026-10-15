@@ -74,6 +74,31 @@ address.
    denylist fails; a generic secret (fake AWS key) fails `staged`.
 10. `privacy-check.sh all` passes on this repo's current history.
 
+### Review round 1 (both reviewers, all reproduced)
+
+11. **Denylist scan without Betterleaks' defaults.** The default config's
+    global allowlist, prefilter and filter drop denylist hits (`*.svg`,
+    lock files, `vendor/`, a match equal to `/home/<x>`). Denylist rules
+    run in their own scan with a config that has no `[extend]`; the default
+    rules keep their own scan.
+12. **No suppression from inside the repo.** Inline `gitleaks:allow` /
+    `betterleaks:allow` comments are ignored (`--ignore-gitleaks-allow`).
+    A `.gitleaksignore` or `.betterleaksignore` anywhere in the work tree,
+    tracked or not, or in the scanned commits, fails the check with a
+    message naming the file.
+13. **Merge commits are scanned**, including content only a merge adds
+    (evil merge, conflict resolution).
+14. **Metadata is checked against the denylist**, with the same RE2
+    dialect as file contents: commit messages, author and committer names,
+    file and directory paths, and for annotated tags in scope their message
+    and tagger name. `emails` also covers tagger emails. A pushed
+    annotated tag is in scope as the tag object, not only its commit.
+15. **Paths are never printed** for any finding: output is rule id, commit
+    (or `index`) and line. No grep-based masking.
+16. **Scanner version is checked on every run.** `privacy-check.sh` always
+    goes through `fetch-tools.sh`, which replaces a cached binary whose
+    version differs from `tools.lock`.
+
 ## Files in scope
 
 `.chezmoiroot`, `home/.chezmoiversion`, `.gitattributes`, `.gitignore`,
@@ -102,6 +127,9 @@ address.
 - The generic-secret test plants a GitHub token (`github-pat`), because
   in v1.9.0 `aws-access-token` is a composite rule that ignores a lone key
   ID.
+- No legitimate way to suppress a finding yet (criterion 12). If a false
+  positive from the default rules shows up, the allowlist goes into the
+  out-of-repo config, never into the repo.
 - Unverified Betterleaks details (staged-scan flag, `--redact`, config
   `[extend]` syntax in v1.9.0) are checked against `betterleaks --help` and
   its docs, not assumed from gitleaks.
