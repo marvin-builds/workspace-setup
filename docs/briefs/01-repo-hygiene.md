@@ -27,11 +27,16 @@ address.
    - Builds a temporary Betterleaks config outside the repo: `[extend]
      useDefault = true` plus one `[[rules]]` per denylist entry. Rule ids
      are `denylist-<n>`, so the id never reveals the entry.
-   - `staged` scans the index, `history` all commits; both pass `--redact`
+   - `staged` scans the index, `history` commits; both pass `--redact`
      so a hit never prints the matched text (CI logs are public).
-   - `emails` fails if any author or committer email in `git log --all`
-     doesn't match `^[0-9]+\+[^@]+@users\.noreply\.github\.com$`. Output
-     names the commit, not the email.
+   - `emails` fails if any author or committer email doesn't match
+     `^[0-9]+\+[^@]+@users\.noreply\.github\.com$`. Output names the commit,
+     not the email.
+   - Scope of `history`, `emails` and `all`: optional revisions after the
+     mode (`privacy-check.sh history <rev>...`) limit the check to commits
+     reachable from them; with none, every ref (`--all`, what CI uses).
+     Local branches that are never pushed (e.g. backups made before a
+     history rewrite) must not block a push.
    - Fails closed: missing denylist, missing scanner or an empty denylist
      is an error with a hint, not a pass.
    - Removes its temporary files on every exit path.
@@ -53,8 +58,12 @@ address.
    ```
 
    Windows assets (`.zip`) wait for the Windows phase.
-8. **Hooks** in `.githooks/`: `pre-commit` runs `staged`; `pre-push` runs
-   `history` and `emails`. Enabled per clone with
+8. **Hooks** in `.githooks/`: `pre-commit` runs `staged`; `pre-push` reads
+   git's stdin (`<local ref> <local sha> <remote ref> <remote sha>` per
+   line), skips deletions (all-zero local sha) and runs `history` and
+   `emails` on the local shas being pushed; nothing to push is a pass.
+   Hooks find `privacy-check.sh` relative to their own location, so they
+   work from any working directory. Enabled per clone with
    `git config core.hooksPath .githooks`, documented in the README.
 9. **Tests** (`tests/privacy.sh`, POSIX sh, until slice 2 brings bats and
    `tests/run.sh`): each case builds a throwaway git repo and a throwaway
@@ -88,6 +97,11 @@ address.
 - Denylist until slice 11: `~/.config/ws/denylist` (override with
   `WS_DENYLIST`). I copy the old repo's `.denylist` there myself, since it
   is private data, not setup.
+- Local checks cover only what is pushed; CI checks every branch on
+  GitHub. Chosen so local backup branches with old private emails can stay.
+- The generic-secret test plants a GitHub token (`github-pat`), because
+  in v1.9.0 `aws-access-token` is a composite rule that ignores a lone key
+  ID.
 - Unverified Betterleaks details (staged-scan flag, `--redact`, config
   `[extend]` syntax in v1.9.0) are checked against `betterleaks --help` and
   its docs, not assumed from gitleaks.
