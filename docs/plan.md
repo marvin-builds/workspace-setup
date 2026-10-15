@@ -240,7 +240,8 @@ Can't catch, with the mitigation:
 Each slice: write the expectation/test first, implement, `tests/run.sh all`
 green, PR.
 
-1. **Repo hygiene.** README, AGENTS.md (source state in `home/`),
+1. **Repo hygiene.** *Status: implemented on `slice-01-repo-hygiene`, see
+   [brief](briefs/01-repo-hygiene.md); not pushed yet.* README, AGENTS.md (source state in `home/`),
    `.chezmoiroot`, `home/.chezmoiversion`, `.gitattributes` (LF for `*.sh`,
    CRLF for `*.ps1`), `.gitignore`, MIT license. Privacy checks before
    the first push: Betterleaks config, denylist as custom rules from outside
