@@ -7,6 +7,8 @@ bootstrap, tests and docs. The plan and implementation slices are in
 orchestrator and role agents (test writer, implementer, reviewer) is in
 `docs/workflow.md`.
 
+Git workflow: pull requests
+
 ## Change the machine only through this repo
 
 - Every setup change, fixes included, goes into this repo first. The machine
