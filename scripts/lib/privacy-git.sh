@@ -1,3 +1,6 @@
+# shellcheck shell=sh
+# Variables set by the caller:
+# shellcheck disable=SC2154
 # Sourced by scripts/privacy-check.sh: everything read from git (scope,
 # blobs, metadata, ignore files, emails). Uses $work, $top, $log_revs, die
 # and say from the caller.
@@ -161,6 +164,7 @@ collect_metadata() {
 # of them fails: in the work tree, the index, or the commits in scope
 # (paths.txt). Only the file name and the commit are printed.
 check_ignore_files() {
+    # shellcheck disable=SC2016 # awk code, expanded by awk
     is_ignore_file='{ n = split($0, p, "/"); b = tolower(p[n]) }
         b == ".gitleaksignore" || b == ".betterleaksignore"'
     {
@@ -178,19 +182,39 @@ check_ignore_files() {
 }
 
 # Every author, committer and tagger email in scope must be a GitHub
-# noreply address. Names the commit or tag, never the email.
+# noreply address. The one exception is exactly `GitHub
+# <noreply@github.com>` as committer: GitHub commits merges made on the
+# website that way. A name or email with a control byte (a tab included,
+# which would also shift the fields) fails too. Names the commit or tag
+# and the role, never the name or email.
+#
+# $work/emails has one record per line: <object>\t<role>\t<email>\t<name>.
+# Object and role come from this script, so they are always the first two
+# fields; anything else is data.
 check_emails() {
-    g_log --format='commit %h%x09author%x09%ae%ncommit %h%x09committer%x09%ce' \
+    g_log --format='commit %h%x09author%x09%ae%x09%an%ncommit %h%x09committer%x09%ce%x09%cn' \
         >"$work/emails" || die "git log failed"
     while read -r tag; do
-        email=$(g cat-file tag "$tag" | awk '
+        g cat-file tag "$tag" | awk -v obj="tag $(g_short "$tag")" '
             /^$/ { exit }
-            /^tagger / && match($0, /<[^>]*>/) { print substr($0, RSTART + 1, RLENGTH - 2) }
-        ')
-        [ -z "$email" ] ||
-            printf 'tag %s\ttagger\t%s\n' "$(g_short "$tag")" "$email" >>"$work/emails"
+            /^tagger / {
+                line = substr($0, 8)
+                lt = index(line, "<")
+                gt = index(line, ">")
+                if (lt == 0 || gt < lt) { printf "%s\ttagger\t\n", obj; exit }
+                name = substr(line, 1, lt - 1)
+                sub(/ +$/, "", name)
+                printf "%s\ttagger\t%s\t%s\n", obj, substr(line, lt + 1, gt - lt - 1), name
+                exit
+            }
+        ' >>"$work/emails" || die "cannot read tag $tag"
     done <"$work/tags"
     awk -F '\t' -v re="$NOREPLY_RE" '
+        NF != 4 || $3 ~ /[\001-\037\177]/ || $4 ~ /[\001-\037\177]/ {
+            printf "privacy-check:   %s: %s name or email has a control byte or an unexpected format\n", $1, $2
+            next
+        }
+        $2 == "committer" && $3 == "noreply@github.com" && $4 == "GitHub" { next }
         $3 !~ re { printf "privacy-check:   %s: %s email is not a GitHub noreply address\n", $1, $2 }
     ' "$work/emails" >"$work/emails.out"
     if [ ! -s "$work/emails.out" ]; then

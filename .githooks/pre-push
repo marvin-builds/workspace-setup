@@ -10,7 +10,7 @@
 here=$(cd "$(dirname "$0")" && pwd) || exit 1
 
 shas=
-while read -r local_ref local_sha remote_ref remote_sha; do
+while read -r _ local_sha _ _; do
     case $local_sha in
         *[!0]*) shas="$shas $local_sha" ;; # all zeros is a deletion
     esac

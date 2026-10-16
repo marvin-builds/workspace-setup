@@ -1,3 +1,6 @@
+# shellcheck shell=sh
+# Variables set by the caller:
+# shellcheck disable=SC2154
 # Sourced by scripts/privacy-check.sh: reads the denylist and writes the two
 # Betterleaks configs. Uses $work, die and say from the caller.
 

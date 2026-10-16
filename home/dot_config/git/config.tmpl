@@ -1,0 +1,11 @@
+# Managed by chezmoi (workspace-setup: home/dot_config/git/config.tmpl).
+#
+# No global email: useConfigOnly makes git refuse to commit until a config
+# sets one. The email comes from ~/.config/git/identities/, written by
+# scripts/git-identities.sh from github_identities: .includes picks the
+# identity file of the GitHub owner a remote of the repo points to.
+[user]
+	name = {{ .name | quote }}
+	useConfigOnly = true
+[include]
+	path = ~/.config/git/identities/.includes

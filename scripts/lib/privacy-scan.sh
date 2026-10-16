@@ -1,3 +1,6 @@
+# shellcheck shell=sh
+# Variables set by the caller:
+# shellcheck disable=SC2154
 # Sourced by scripts/privacy-check.sh: runs Betterleaks on exported objects
 # and metadata and reports findings. Uses $work, $SCANNER, $LEAKS_EXIT, die,
 # say and the git helpers from the caller.
@@ -83,8 +86,7 @@ scan_blobs() {
         printf 'privacy-check:   %s  blob %s  %s  line %s\n' \
             "$rule" "$(g_short "$oid")" "$where" "$line"
     done >"$work/findings"
-    print_findings "$label" || return 1
-    return $errors
+    report_scan "$label" "$errors"
 }
 
 # print_findings <label>: prints $work/findings under a heading, or "clean".
@@ -96,6 +98,21 @@ print_findings() {
         return 1
     fi
     say "$1: no leaks found"
+}
+
+# report_scan <label> <errors>: prints the findings; after a scanner error
+# the result is incomplete, so it fails and never says "no leaks found".
+report_scan() {
+    if [ "$2" -eq 0 ]; then
+        print_findings "$1"
+        return
+    fi
+    if [ -s "$work/findings" ]; then
+        say "$1: leaks found (matched text redacted):"
+        cat "$work/findings"
+    fi
+    say "$1: scan incomplete because of the scanner error above"
+    return 1
 }
 
 # scan_metadata <label>: scans $work/meta.txt with the denylist rules (same
@@ -119,4 +136,32 @@ scan_metadata() {
             ;;
     esac
     print_findings "$label"
+}
+
+# scan_text <label>: scans stdin (PR title and body, branch names) with both
+# configs. The text goes to a file behind the text header first, so binary
+# looking input is scanned as text and both scans read the same bytes.
+# Findings name rule and line of the input, never the text.
+scan_text() {
+    label=$1
+    {
+        printf '%s\n' "$TEXT_HEADER"
+        cat
+    } >"$work/text.txt" || die "cannot read the text from stdin"
+    : >"$work/hits"
+    errors=0
+    for config in defaults denylist; do
+        run_scanner "$work/$config.toml" stdin <"$work/text.txt"
+        case $? in
+            1) awk -F '\t' 'NF { print $1, $2 - 1 }' "$work/report" >>"$work/hits" ;;
+            2)
+                scanner_failed "$label"
+                errors=1
+                ;;
+        esac
+    done
+    sort -u "$work/hits" | while read -r rule line; do
+        printf 'privacy-check:   %s  line %s\n' "$rule" "$line"
+    done >"$work/findings"
+    report_scan "$label" "$errors"
 }

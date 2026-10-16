@@ -1,0 +1,117 @@
+# Tests, lint and privacy checks for every branch and PR (see
+# docs/briefs/02-test-harness.md). Tools come from scripts/tools.lock via
+# tests/run.sh and scripts/fetch-tools.sh, cached per lock file.
+#
+# Event data and secrets reach scripts only through env:, never through
+# ${{ }} inside run: (script injection).
+
+name: CI
+
+on:
+  push:
+  # edited: a changed PR title or body is checked again (privacy job).
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            modes: unit render
+          # Git Bash; unit tests run on Linux only for now.
+          - os: windows-latest
+            modes: render
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/tools.lock') }}
+      - name: Run tests
+        env:
+          MODES: ${{ matrix.modes }}
+        run: |
+          status=0
+          for mode in $MODES; do
+            tests/run.sh "$mode" || status=1
+          done
+          exit "$status"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/tools.lock') }}
+      - name: shellcheck and actionlint
+        run: tests/run.sh lint
+
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/tools.lock') }}
+      # privacy-check.sh runs git with GIT_CONFIG_GLOBAL=/dev/null, so a
+      # safe.directory entry from the global config would not apply. The
+      # checkout belongs to the runner user, so git must trust it anyway.
+      - name: Git trusts the checkout without global config
+        run: GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git rev-parse --show-toplevel
+      # Fails closed: without the secret (forks, or not set up yet) the job
+      # fails instead of skipping the denylist.
+      - name: Write the denylist from the WS_DENYLIST secret
+        env:
+          DENYLIST_CONTENT: ${{ secrets.WS_DENYLIST }}
+        run: |
+          if [ -z "$DENYLIST_CONTENT" ]; then
+            echo "::error::Actions secret WS_DENYLIST is missing or empty; see docs/new-machine.md."
+            exit 1
+          fi
+          file=$(mktemp)
+          chmod 600 "$file"
+          printf '%s\n' "$DENYLIST_CONTENT" >"$file"
+          echo "WS_DENYLIST=$file" >>"$GITHUB_ENV"
+      - name: History, staged content and emails (every ref)
+        run: scripts/privacy-check.sh all
+      - name: Branch name
+        if: ${{ !cancelled() }}
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: printf '%s\n' "$BRANCH_NAME" | scripts/privacy-check.sh text
+      - name: PR title and body
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | scripts/privacy-check.sh text
+      - name: Remove the denylist
+        if: always()
+        run: |
+          if [ -n "${WS_DENYLIST:-}" ]; then
+            rm -f "$WS_DENYLIST"
+          fi

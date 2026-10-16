@@ -1,0 +1,6 @@
+{{- /* Scripts that have a twin for the other OS family. */ -}}
+{{ if eq .chezmoi.os "windows" -}}
+.chezmoiscripts/git-identities.sh
+{{ else -}}
+.chezmoiscripts/git-identities.ps1
+{{ end -}}

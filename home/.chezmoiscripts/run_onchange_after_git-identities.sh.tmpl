@@ -1,0 +1,29 @@
+{{- /* Data and the script must be safe before anything renders: only the
+       characters of owner=email pairs and whitespace, no newlines, so the
+       data can't end the here-doc below. */ -}}
+{{- if not (regexMatch `^[A-Za-z0-9=+@._ \t-]*$` .github_identities) -}}
+{{-   fail "github_identities may only contain owner=email pairs separated by spaces or tabs" -}}
+{{- end -}}
+{{- $script := joinPath .chezmoi.workingTree "scripts" "git-identities.sh" -}}
+{{- if not (stat $script) -}}
+{{-   fail (printf "%s not found: the chezmoi source must be a git clone of workspace-setup (.chezmoi.workingTree is its root)" $script) -}}
+{{- end -}}
+#!/bin/sh
+# Writes the git identity files (~/.config/git/identities/) from
+# github_identities. chezmoi reruns this whenever its rendered text changes:
+# the pairs below or the hash of the script that does the work.
+# scripts/git-identities.sh sha256: {{ include $script | sha256sum }}
+# chezmoi exports .chezmoi.workingTree and .chezmoi.destDir to scripts as
+# CHEZMOI_WORKING_TREE and CHEZMOI_DEST_DIR. The quoted here-doc keeps the
+# data from being read as shell code. Windows uses the .ps1 twin.
+set -eu
+pairs=$(cat <<'WS_GITHUB_IDENTITIES'
+{{ .github_identities }}
+WS_GITHUB_IDENTITIES
+)
+script="$CHEZMOI_WORKING_TREE/scripts/git-identities.sh"
+[ -f "$script" ] || {
+    printf 'git-identities: %s not found; the chezmoi source must be a git clone of workspace-setup\n' "$script" >&2
+    exit 1
+}
+exec sh "$script" "$CHEZMOI_DEST_DIR" "$pairs"
