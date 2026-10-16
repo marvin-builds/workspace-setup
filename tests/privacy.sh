@@ -1,5 +1,8 @@
 #!/bin/sh
-# Tests for slice 1: repo skeleton files and scripts/privacy-check.sh.
+# Cases run in subshells on purpose, so their variables stay local to them.
+# shellcheck disable=SC2030,SC2031
+# Tests for slice 1 (repo skeleton files, scripts/privacy-check.sh) and the
+# text mode added in slice 2.
 #
 # POSIX sh until slice 2 brings bats and tests/run.sh. Each privacy case runs
 # in its own temp dir with a throwaway git repo, a throwaway denylist passed
@@ -16,6 +19,7 @@ CHECK="$REPO_ROOT/scripts/privacy-check.sh"
 
 # Distinctive fake denylisted word. The denylist entry is a regex and matching
 # is case-insensitive, so the content uses a different case than the entry.
+# shellcheck disable=SC2034 # names the word; expect_no_deny_word checks it
 DENY_WORD=zorblaxcorp
 DENY_ENTRY='zorblax(corp|inc)'
 DENY_CONTENT='Built for ZorblaxCorp only'
@@ -221,6 +225,7 @@ expect_denylist_hint() {
 
 expect_tmp_empty() {
     if [ -n "$(ls -A "$TMPDIR")" ]; then
+        # shellcheck disable=SC2012 # names only, for the failure message
         fail "$1: temp files left in TMPDIR: $(ls -A "$TMPDIR" | tr '\n' ' ')"
         return 1
     fi
@@ -893,6 +898,283 @@ case_pdf_tmpdir_with_space() {
     staged_pdf_hit 'TMPDIR with a space'
 }
 
+# ---------------------------------------------- text mode (slice 2, 12)
+
+# check_text: runs "privacy-check.sh text" in $REPO with $CASE_DIR/text-in
+# on stdin, output to $OUT, sets $rc. Write the input with text_in first.
+check_text() {
+    if [ ! -x "$CHECK" ]; then
+        fail "script missing or not executable: scripts/privacy-check.sh"
+        return 1
+    fi
+    rc=0
+    (cd "$REPO" && "$CHECK" text <"$CASE_DIR/text-in") >"$OUT" 2>&1 || rc=$?
+    return 0
+}
+
+# text_in <line>...: writes the lines as the text to check.
+text_in() {
+    printf '%s\n' "$@" >"$CASE_DIR/text-in"
+}
+
+# expect_not_usage <label>: a failure must be a finding, not a usage error
+# from a script that doesn't know the mode yet.
+expect_not_usage() {
+    if grep -qi 'usage' "$OUT"; then
+        fail "$1: got a usage message, not a finding; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+case_text_clean_passes() {
+    text_in 'feature/add-git-config' 'Add the git config' 'A harmless PR body.'
+    check_text || return 1
+    expect_rc_zero "text (clean)" || return 1
+    expect_not_usage "text (clean)"
+}
+
+case_text_deny_line1_fails() {
+    text_in "$DENY_CONTENT" 'second line'
+    check_text || return 1
+    expect_rc_nonzero "text (word on line 1)" || return 1
+    expect_not_usage "text (word on line 1)" || return 1
+    expect_no_deny_word "text (word on line 1)" || return 1
+    expect_absent "text (word on line 1)" "$DENY_CONTENT" || return 1
+    expect_deny_rule "text (word on line 1)" || return 1
+    expect_shown "text (word on line 1)" "line 1" 'line 1([^0-9]|$)'
+}
+
+case_text_deny_line3_fails() {
+    text_in 'Fix typo' '' "$DENY_CONTENT" 'trailing line'
+    check_text || return 1
+    expect_rc_nonzero "text (word on line 3)" || return 1
+    expect_not_usage "text (word on line 3)" || return 1
+    expect_no_deny_word "text (word on line 3)" || return 1
+    expect_deny_rule "text (word on line 3)" || return 1
+    expect_shown "text (word on line 3)" "line 3" 'line 3([^0-9]|$)'
+}
+
+case_text_fake_token_fails() {
+    text_in 'PR body' "token: $FAKE_GH_PAT"
+    check_text || return 1
+    expect_rc_nonzero "text (fake GitHub token)" || return 1
+    expect_absent "text" "$FAKE_GH_PAT" || return 1
+    expect_absent "text" "$gh_tail" || return 1
+    expect_secret_rule "text"
+}
+
+case_text_missing_denylist_fails() {
+    text_in 'harmless'
+    WS_DENYLIST="$CASE_DIR/no-such-denylist"
+    export WS_DENYLIST
+    check_text || return 1
+    expect_rc_nonzero "text without denylist" || return 1
+    expect_denylist_hint "text without denylist"
+}
+
+case_text_no_temp_files_left() {
+    text_in 'harmless'
+    check_text || return 1
+    expect_rc_zero "text (clean)" || return 1
+    expect_tmp_empty "after passing text" || return 1
+    text_in "$DENY_CONTENT"
+    check_text || return 1
+    expect_rc_nonzero "text (deny word)" || return 1
+    expect_deny_rule "text (deny word)" || return 1
+    expect_tmp_empty "after failing text"
+}
+
+# ------------------------------------- review round 1 (slice 2, 20 and 23)
+
+# commit_as <author name> <author email> <committer name> <committer email>
+commit_as() {
+    GIT_AUTHOR_NAME=$1 GIT_AUTHOR_EMAIL=$2 \
+        GIT_COMMITTER_NAME=$3 GIT_COMMITTER_EMAIL=$4 \
+        git -C "$REPO" commit -q --allow-empty -m 'Merge pull request'
+}
+
+case_github_merge_committer_passes() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_as 'Test User' "$NOREPLY_EMAIL" GitHub noreply@github.com
+    check emails || return 1
+    expect_rc_zero "emails (committer GitHub <noreply@github.com>)"
+}
+
+case_github_noreply_as_author_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_as GitHub noreply@github.com 'Test User' "$NOREPLY_EMAIL"
+    short=$(git -C "$REPO" rev-parse --short=7 HEAD)
+    check emails || return 1
+    expect_rc_nonzero "emails (author GitHub <noreply@github.com>)" || return 1
+    expect_commit "emails" "$short"
+}
+
+case_github_other_address_committer_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_as 'Test User' "$NOREPLY_EMAIL" GitHub other@github.com
+    check emails || return 1
+    expect_rc_nonzero "emails (committer GitHub <other@github.com>)"
+}
+
+case_github_noreply_other_name_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    commit_as 'Test User' "$NOREPLY_EMAIL" 'Not GitHub' noreply@github.com
+    check emails || return 1
+    expect_rc_nonzero "emails (committer 'Not GitHub' <noreply@github.com>)"
+}
+
+case_github_noreply_as_tagger_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    GIT_COMMITTER_NAME=GitHub GIT_COMMITTER_EMAIL=noreply@github.com \
+        git -C "$REPO" tag -a v1 -m 'Release'
+    check emails || return 1
+    expect_rc_nonzero "emails (tagger GitHub <noreply@github.com>)"
+}
+
+# A denylist entry the scanner rejects as a regex: an unclosed group.
+write_invalid_denylist() {
+    {
+        printf '# throwaway denylist for tests\n'
+        printf '\n'
+        printf 'zorblax(corp\n'
+    } >"$WS_DENYLIST"
+}
+
+case_text_scanner_error_not_clean() {
+    write_invalid_denylist
+    text_in 'harmless text'
+    check_text || return 1
+    expect_rc_nonzero "text with invalid denylist regex" || return 1
+    expect_not_usage "text with invalid denylist regex" || return 1
+    expect_absent "text with invalid denylist regex" 'no leaks found'
+}
+
+case_staged_scanner_error_not_clean() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    stage_file notes.txt 'Another harmless line.'
+    write_invalid_denylist
+    check staged || return 1
+    expect_rc_nonzero "staged with invalid denylist regex" || return 1
+    if grep -E '^privacy-check: staged: no leaks found' "$OUT" >/dev/null; then
+        fail "staged: 'no leaks found' after a scanner error; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+case_history_scanner_error_not_clean() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    write_invalid_denylist
+    check history || return 1
+    expect_rc_nonzero "history with invalid denylist regex" || return 1
+    if grep -E '^privacy-check: history: no leaks found' "$OUT" >/dev/null; then
+        fail "history: 'no leaks found' after a scanner error; output: $(head -c 400 "$OUT" | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+# ---------------------------------- control bytes in identities (32)
+
+# A noreply-looking email with a control byte inside, and a name. The
+# distinctive part "leakyuser" must never be printed.
+TAB=$(printf '\t')
+SOH=$(printf '\001')
+CTRL_LEAK=leakyuser
+
+# raw_commit <author ident> <committer ident>: writes a commit object as
+# given (git commit would refuse some idents) on top of HEAD and moves the
+# current branch to it. An ident is "Name <email>".
+raw_commit() {
+    tree=$(git -C "$REPO" rev-parse 'HEAD^{tree}')
+    parent=$(git -C "$REPO" rev-parse HEAD)
+    sha=$(printf 'tree %s\nparent %s\nauthor %s 1700000000 +0000\ncommitter %s 1700000000 +0000\n\nRaw commit\n' \
+        "$tree" "$parent" "$1" "$2" |
+        git -C "$REPO" hash-object -t commit -w --literally --stdin) || return 1
+    git -C "$REPO" update-ref HEAD "$sha"
+}
+
+# raw_tag <tagger ident>: an annotated tag object on HEAD, as given.
+raw_tag() {
+    target=$(git -C "$REPO" rev-parse HEAD)
+    sha=$(printf 'object %s\ntype commit\ntag raw\ntagger %s 1700000000 +0000\n\nRaw tag\n' \
+        "$target" "$1" |
+        git -C "$REPO" hash-object -t tag -w --literally --stdin) || return 1
+    git -C "$REPO" update-ref refs/tags/raw "$sha"
+}
+
+# ctrl_email <control byte>
+ctrl_email() {
+    printf '12345678+%s%s@users.noreply.github.com' "$CTRL_LEAK" "$1"
+}
+
+GOOD_IDENT="Test User <$NOREPLY_EMAIL>"
+
+# expect_ctrl_fails <label>
+expect_ctrl_fails() {
+    check emails || return 1
+    expect_rc_nonzero "emails ($1)" || return 1
+    expect_absent "emails ($1)" "$CTRL_LEAK" || return 1
+    if grep -q "$SOH" "$OUT"; then
+        fail "emails ($1): output contains a raw control byte"
+        return 1
+    fi
+}
+
+case_ctrl_tab_author_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "Test User <$(ctrl_email "$TAB")>" "$GOOD_IDENT" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "tab in author email"
+}
+
+case_ctrl_soh_author_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "Test User <$(ctrl_email "$SOH")>" "$GOOD_IDENT" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "0x01 in author email"
+}
+
+case_ctrl_tab_committer_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "$GOOD_IDENT" "Test User <$(ctrl_email "$TAB")>" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "tab in committer email"
+}
+
+case_ctrl_soh_committer_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "$GOOD_IDENT" "Test User <$(ctrl_email "$SOH")>" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "0x01 in committer email"
+}
+
+case_ctrl_tab_author_name_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "Test${TAB}$CTRL_LEAK <$NOREPLY_EMAIL>" "$GOOD_IDENT" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "tab in author name"
+}
+
+case_ctrl_soh_author_name_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "Test${SOH}$CTRL_LEAK <$NOREPLY_EMAIL>" "$GOOD_IDENT" || { fail "cannot write raw commit"; return 1; }
+    expect_ctrl_fails "0x01 in author name"
+}
+
+case_ctrl_tab_tagger_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_tag "Test User <$(ctrl_email "$TAB")>" || { fail "cannot write raw tag"; return 1; }
+    expect_ctrl_fails "tab in tagger email"
+}
+
+case_ctrl_soh_tagger_email_fails() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_tag "Test User <$(ctrl_email "$SOH")>" || { fail "cannot write raw tag"; return 1; }
+    expect_ctrl_fails "0x01 in tagger email"
+}
+
+case_ctrl_clean_raw_commit_passes() {
+    commit_file 'Add readme' README.md 'Just a harmless readme.'
+    raw_commit "$GOOD_IDENT" "$GOOD_IDENT" || { fail "cannot write raw commit"; return 1; }
+    raw_tag "$GOOD_IDENT" || { fail "cannot write raw tag"; return 1; }
+    check emails || return 1
+    expect_rc_zero "emails (raw objects without control bytes, control)"
+}
+
 # ----------------------------------------------------------- hook checks
 
 # hook_calls <hook> <mode>: hook file runs privacy-check.sh with <mode>.
@@ -1035,6 +1317,29 @@ run_case "23: emails fails in a shallow clone, with hint" case_shallow_emails
 run_case "23: all fails in a shallow clone, with hint" case_shallow_all
 run_case "24: staged PDF hit reports line 2 (normal TMPDIR)" case_pdf_normal_tmpdir
 run_case "24: staged PDF hit reports line 2 (TMPDIR with a space)" case_pdf_tmpdir_with_space
+run_case "text: clean stdin passes" case_text_clean_passes
+run_case "text: denylisted text on line 1 fails, rule and line, redacted" case_text_deny_line1_fails
+run_case "text: denylisted text on line 3 fails, rule and line, redacted" case_text_deny_line3_fails
+run_case "text: fake GitHub token fails, redacted" case_text_fake_token_fails
+run_case "text: missing denylist fails with hint" case_text_missing_denylist_fails
+run_case "text: no temp files left" case_text_no_temp_files_left
+run_case "20: committer GitHub <noreply@github.com> passes emails" case_github_merge_committer_passes
+run_case "20: author GitHub <noreply@github.com> fails emails" case_github_noreply_as_author_fails
+run_case "20: committer GitHub <other@github.com> fails emails" case_github_other_address_committer_fails
+run_case "20: committer 'Not GitHub' <noreply@github.com> fails emails" case_github_noreply_other_name_fails
+run_case "20: tagger GitHub <noreply@github.com> fails emails" case_github_noreply_as_tagger_fails
+run_case "23: text: scanner error never says 'no leaks found'" case_text_scanner_error_not_clean
+run_case "23: staged: scanner error never says 'no leaks found'" case_staged_scanner_error_not_clean
+run_case "23: history: scanner error never says 'no leaks found'" case_history_scanner_error_not_clean
+run_case "32: raw commit and tag without control bytes pass emails (control)" case_ctrl_clean_raw_commit_passes
+run_case "32: tab in author email fails emails, not printed" case_ctrl_tab_author_email_fails
+run_case "32: 0x01 in author email fails emails, not printed" case_ctrl_soh_author_email_fails
+run_case "32: tab in committer email fails emails, not printed" case_ctrl_tab_committer_email_fails
+run_case "32: 0x01 in committer email fails emails, not printed" case_ctrl_soh_committer_email_fails
+run_case "32: tab in author name fails emails, not printed" case_ctrl_tab_author_name_fails
+run_case "32: 0x01 in author name fails emails, not printed" case_ctrl_soh_author_name_fails
+run_case "32: tab in tagger email fails emails, not printed" case_ctrl_tab_tagger_email_fails
+run_case "32: 0x01 in tagger email fails emails, not printed" case_ctrl_soh_tagger_email_fails
 
 total=$((passed + failed))
 printf '\n%d of %d passed, %d failed\n' "$passed" "$total" "$failed"
