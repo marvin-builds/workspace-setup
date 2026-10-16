@@ -105,8 +105,10 @@ expect_refused() {
     [ "$status" -ne 127 ] || { echo "exit 127 instead of a clear message" >&2; return 1; }
     # chezmoi names its own script .chezmoiscripts/git-identities.sh, so the
     # repo path must appear (either separator: native paths on Windows),
-    # and the shell's 127 must not.
-    expect_output_matches '(^|[^A-Za-z])scripts[/\\]git-identities\.sh'
+    # and the shell's 127 must not. Since slice 3 the expect.tsv template
+    # (which also reads from the work tree, and renders first) may be the
+    # one to stop, naming tests/expect.yaml instead.
+    expect_output_matches '(^|[^A-Za-z])(scripts[/\\]git-identities\.sh|tests[/\\]expect\.yaml)'
     expect_output_lacks 'exit status 127'
     expect_output_lacks ': not found'
 }

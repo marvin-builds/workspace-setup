@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# Tests for tests/run.sh (slice 2, criterion 3).
+# Tests for tests/run.sh (slice 2, criterion 3). The system mode (slice 3)
+# is tested in tests/unit/system.bats.
 #
 #   tests/run.sh <unit|render|lint|all>
 #
@@ -46,12 +47,6 @@ add_bats() {
 
 @test "run.sh: is a POSIX sh script" {
     expect_equal "shebang" '#!/bin/sh' "$(head -n 1 "$RUN")"
-}
-
-@test "run.sh: system mode fails with a 'not yet' message" {
-    run "$RUN" system
-    expect_failure
-    expect_output_matches '[Nn]ot yet'
 }
 
 @test "run.sh: unknown mode fails" {

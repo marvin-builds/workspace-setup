@@ -1,0 +1,42 @@
+# What a set-up machine must look like. chezmoi renders this, filtered by
+# OS, role and form, to ~/.config/ws/expect.tsv (home/dot_config/ws/), and
+# `ws doctor` checks the machine against that file.
+#
+# Format (validated by tests/unit/expect-yaml.bats):
+#
+#   checks:            a list; each entry has
+#     id               unique, [a-z0-9-]+
+#     exactly one kind:
+#       command: <name>              on PATH; optional
+#         smoke: <command line>      must exit 0
+#         source: <path>             the resolved command must be this path
+#       file: <path>                 exists
+#       absent: <path>               doesn't exist
+#       line: {file: <path>, text: <fixed string>, count: <n>}
+#                                    exactly n lines of the file equal text
+#     optional filters (lists; missing means all):
+#       os: [linux, darwin, windows]
+#       roles: [personal, work]
+#       forms: [desktop, headless, wsl, container]
+#
+# Paths may start with ~/. No value may contain a tab or a newline.
+
+checks:
+  - id: chezmoi
+    command: chezmoi
+    source: ~/.local/bin/chezmoi
+    smoke: chezmoi --version
+
+  - id: git
+    command: git
+    smoke: git --version
+
+  - id: ws
+    command: ws
+    source: ~/.local/bin/ws
+
+  - id: git-config
+    file: ~/.config/git/config
+
+  - id: expect-tsv
+    file: ~/.config/ws/expect.tsv

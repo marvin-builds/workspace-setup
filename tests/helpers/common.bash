@@ -55,6 +55,15 @@ tool_path() {
     fi
 }
 
+# native_path <path>: prints <path> as native programs such as chezmoi
+# print it: unchanged on Linux and macOS, in mixed form (D:/a/x) on Windows.
+native_path() {
+    case $(uname -s) in
+        MINGW* | MSYS*) cygpath -m "$1" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
 # require_tool <name>: fails the test with a hint when the tool isn't cached.
 require_tool() {
     tool_path "$1" >/dev/null && return 0
