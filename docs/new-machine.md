@@ -24,3 +24,15 @@ that replaces it; remove the step when that slice lands.
 
 3. **Check:** `scripts/privacy-check.sh all HEAD` passes. The first run
    downloads and verifies the pinned Betterleaks into `.cache/bin/`.
+
+## Once per GitHub repo
+
+4. **Denylist for CI** (manual, run it yourself). The privacy job in CI reads the denylist
+   from the Actions secret `WS_DENYLIST` and fails without it. From the
+   clone, with the denylist from step 1:
+
+   ```sh
+   gh secret set WS_DENYLIST < ~/.config/ws/denylist
+   ```
+
+   Run it again whenever the denylist changes.

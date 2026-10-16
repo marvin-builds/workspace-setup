@@ -104,8 +104,18 @@ Asked once by `.chezmoi.toml.tmpl`, overridable in tests via `--config`:
 - `form`: desktop | headless | wsl | container. GNOME settings, fonts,
   flatpak and wezterm apply only to `desktop`. In WSL, fonts and the
   terminal live on the Windows side.
-- `name`, `email`, `repos_dir`, `notes_dir`, `ai_personal_dir`,
-  `github_owners` (for `ws clone`)
+- `name`, `repos_dir`, `notes_dir`, `ai_personal_dir`, `github_owners`
+  (for `ws clone`)
+- `github_identities`: space-separated `owner=email` pairs, one per GitHub
+  account, each with its noreply address. There is no global `email`: the
+  git config sets `user.useConfigOnly = true` and includes the matching
+  identity per remote (`includeIf hasconfig:remote.*.url`). Owners and
+  emails never appear in tracked files. Provided `~/.gitconfig` sets no
+  `user.name` or `user.email` (git reads it after `~/.config/git/config`,
+  so its values win), a repo without a known owner, or with remotes of two
+  known owners, refuses to commit instead of using a wrong email. Slice 3's
+  `ws doctor` flags such values in `~/.gitconfig`; slice 12's migration
+  removes them.
 - `ci` (true in tests: stub secrets, skip interactive steps)
 
 `packages.yaml` entries filter with `roles:` and `forms:`. Replaces the old
@@ -240,14 +250,16 @@ Can't catch, with the mitigation:
 Each slice: write the expectation/test first, implement, `tests/run.sh all`
 green, PR.
 
-1. **Repo hygiene.** *Status: implemented on `slice-01-repo-hygiene`, see
-   [brief](briefs/01-repo-hygiene.md); not pushed yet.* README, AGENTS.md (source state in `home/`),
+1. **Repo hygiene.** *Status: merged (PR #1), see
+   [brief](briefs/01-repo-hygiene.md).* README, AGENTS.md (source state in `home/`),
    `.chezmoiroot`, `home/.chezmoiversion`, `.gitattributes` (LF for `*.sh`,
    CRLF for `*.ps1`), `.gitignore`, MIT license. Privacy checks before
    the first push: Betterleaks config, denylist as custom rules from outside
    the repo, staged-file scan as pre-commit hook, commit-email check, noreply
    email set for this repo via `includeIf`.
-2. **Test harness + CI skeleton.** `tests/run.sh` (unit and render modes),
+2. **Test harness + CI skeleton.** *Status: implemented on
+   `slice-02-test-harness`, see [brief](briefs/02-test-harness.md); in
+   review as a PR. Known limitation: issue #2.* `tests/run.sh` (unit and render modes),
    bats setup, `tests/profiles/` for role × form, minimal
    `.chezmoi.toml.tmpl`, one managed file (git config) as the first
    red→green case. CI runs layers 0 and 1 on `ubuntu-latest` and
@@ -261,7 +273,11 @@ green, PR.
    idempotency checks, runner-VM job, weekly schedule. Hooks convention:
    a repo that ships `.githooks/` gets `core.hooksPath=.githooks`;
    bootstrap applies it to the setup repo it cloned, and `ws doctor`
-   flags clones with `.githooks/` but without the setting.
+   flags clones with `.githooks/` but without the setting. Git identity:
+   `ws doctor` flags a `user.name` or `user.email` in `~/.gitconfig` (it
+   overrides the managed XDG config) and checks that an identity file
+   exists in `~/.config/git/identities/` for every owner in
+   `github_identities` (`chezmoi apply` doesn't repair a deleted one).
 4. **Shell base.** Thin bashrc sourcing `~/.config/shell/*.sh` and the
    untracked `local/` drop-in, PATH for `~/.local/bin`, starship, emacs-mode
    line editing, first dated migration script that removes the old marker
@@ -300,7 +316,9 @@ green, PR.
     `chezmoi diff` review, backup of every target from `chezmoi managed` to
     `~/.local/state/ws/backup-<timestamp>/` (restoring it is the rollback),
     run on the real machine, real-machine `ws doctor` (secrets, sign-ins,
-    shortcuts). Follows the steps in "Migration from the old setup".
+    shortcuts). Follows the steps in "Migration from the old setup". The
+    migration removes `user.name` and `user.email` from `~/.gitconfig`, so
+    the per-owner identities from slice 2 take effect.
 
 Later phases: **Windows** (`bootstrap.ps1`, winget/scoop columns, PowerShell
 profile incl. OneDrive paths and encoding, `ws.cmd`/`ws.ps1` shims and a
