@@ -1,0 +1,35 @@
+{{- /* Same guards as the .sh twin: no newline or quote can end the
+       here-string below, and the script must exist. */ -}}
+{{- if not (regexMatch `^[A-Za-z0-9=+@._ \t-]*$` .github_identities) -}}
+{{-   fail "github_identities may only contain owner=email pairs separated by spaces or tabs" -}}
+{{- end -}}
+{{- $script := joinPath .chezmoi.workingTree "scripts" "git-identities.sh" -}}
+{{- if not (stat $script) -}}
+{{-   fail (printf "%s not found: the chezmoi source must be a git clone of workspace-setup (.chezmoi.workingTree is its root)" $script) -}}
+{{- end -}}
+# Windows twin of run_onchange_after_git-identities.sh.tmpl: chezmoi has no
+# default interpreter for .sh on Windows, so this hands the same data to
+# scripts/git-identities.sh through the sh.exe of Git for Windows.
+# scripts/git-identities.sh sha256: {{ include $script | sha256sum }}
+$ErrorActionPreference = 'Stop'
+$pairs = @'
+{{ .github_identities }}
+'@
+$script = Join-Path $env:CHEZMOI_WORKING_TREE 'scripts/git-identities.sh'
+if (-not (Test-Path -LiteralPath $script)) {
+    throw "git-identities: $script not found; the chezmoi source must be a git clone of workspace-setup"
+}
+# sh.exe from the Git install that provides git, not whatever PATH finds
+# first: git --exec-path is <git root>/<mingw64|clangarm64>/libexec/git-core.
+# bin\sh.exe first: it puts Git's MSYS tools on PATH before starting sh;
+# usr\bin\sh.exe is the plain shell, used only if the wrapper is missing.
+$gitRoot = Split-Path (Split-Path (Split-Path (git --exec-path)))
+$sh = Join-Path $gitRoot 'bin\sh.exe'
+if (-not (Test-Path -LiteralPath $sh)) { $sh = Join-Path $gitRoot 'usr\bin\sh.exe' }
+if (-not (Test-Path -LiteralPath $sh)) {
+    throw "git-identities: no sh.exe in the Git for Windows install at $gitRoot"
+}
+# The leading space keeps the argument non-empty (Windows PowerShell drops
+# empty arguments); git-identities.sh ignores surrounding whitespace.
+& $sh $script $env:CHEZMOI_DEST_DIR " $pairs"
+exit $LASTEXITCODE

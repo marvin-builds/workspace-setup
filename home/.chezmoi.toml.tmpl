@@ -1,0 +1,15 @@
+{{- /*
+  Machine data, asked once by `chezmoi init` (see "Machine data" in
+  docs/plan.md). Values already in the config are kept, so later inits
+  don't ask again. Tests pass a complete config instead (tests/profiles/).
+
+  github_identities: space-separated owner=email pairs, one per GitHub
+  account, with the account's noreply address. They pick the commit email
+  per remote (dot_config/git/config.tmpl, scripts/git-identities.sh).
+*/ -}}
+{{- $role := promptChoiceOnce . "role" "Role" (list "personal" "work") -}}
+{{- $form := promptChoiceOnce . "form" "Form" (list "desktop" "headless" "wsl" "container") -}}
+{{- $name := promptStringOnce . "name" "Name" -}}
+{{- $githubIdentities := promptStringOnce . "github_identities" "GitHub identities" -}}
+{{- $ci := promptBoolOnce . "ci" "CI" false -}}
+{{- dict "data" (dict "role" $role "form" $form "name" $name "github_identities" $githubIdentities "ci" $ci) | toToml -}}
