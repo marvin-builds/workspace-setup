@@ -7,12 +7,15 @@
 #   lint    shellcheck on every tracked shell script, actionlint on
 #           .github/workflows/
 #   all     unit, render and lint; every mode runs even if one fails
-#   system  reserved for slice 3
+#   system  needs Docker: builds tests/system/ and runs the real bootstrap
+#           in a fresh container per role (tests/system/run-in-container.sh
+#           has the contract). Tests the committed HEAD, since bootstrap
+#           clones the repo; commit changes first. Not part of `all`.
 #
 # Exits non-zero if any test or check fails. POSIX sh; render also runs
 # under Git Bash on Windows.
 #
-# Usage: tests/run.sh <unit|render|lint|all>
+# Usage: tests/run.sh <unit|render|lint|all|system>
 
 set -u
 
@@ -21,7 +24,7 @@ BIN="$ROOT/.cache/bin"
 FETCH="$ROOT/scripts/fetch-tools.sh"
 
 usage() {
-    printf 'usage: %s <unit|render|lint|all>\n' "$(basename "$0")" >&2
+    printf 'usage: %s <unit|render|lint|all|system>\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -119,14 +122,71 @@ mode_lint() {
     return $status_l
 }
 
+SYSTEM_IMAGE=workspace-setup-system:local
+SYSTEM_ROLES="personal work"
+
+mode_system() {
+    command -v docker >/dev/null 2>&1 || {
+        say "system: docker is not installed or not on PATH"
+        return 1
+    }
+    # The container clones /src, which needs the .git directory itself.
+    [ -d "$ROOT/.git" ] || {
+        say "system: $ROOT/.git is not a directory (a linked worktree?); run from the main clone"
+        return 1
+    }
+    if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
+        say "system: uncommitted changes are not tested; the bootstrap clones HEAD"
+    fi
+    # The current context, read with the machine's own config before it is
+    # swapped out, is passed on, so context-based setups keep working. A
+    # set DOCKER_HOST already says where to go and conflicts with a context.
+    context=
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        context=${DOCKER_CONTEXT:-$(docker context show 2>/dev/null || true)}
+    fi
+    # Only public images are pulled, so an empty Docker config is enough,
+    # and the machine's own (credential helpers, auth) is never used.
+    # CLI plugins (buildx) and context definitions are linked in.
+    docker_config=$(mktemp -d "${TMPDIR:-/tmp}/ws-docker-config.XXXXXX") || return 1
+    trap 'rm -rf "$docker_config"' EXIT
+    trap 'exit 1' HUP INT TERM
+    user_config=${DOCKER_CONFIG:-$HOME/.docker}
+    for d in cli-plugins contexts; do
+        [ ! -d "$user_config/$d" ] || ln -s "$user_config/$d" "$docker_config/$d"
+    done
+    DOCKER_CONFIG=$docker_config
+    export DOCKER_CONFIG
+    if [ -n "$context" ]; then
+        DOCKER_CONTEXT=$context
+        export DOCKER_CONTEXT
+    fi
+    status_s=0
+    docker build -t "$SYSTEM_IMAGE" "$ROOT/tests/system" || {
+        say "system: docker build failed"
+        status_s=1
+    }
+    if [ $status_s -eq 0 ]; then
+        for role in $SYSTEM_ROLES; do
+            say "system: role $role"
+            docker run --rm \
+                -v "$ROOT:/src:ro" "$SYSTEM_IMAGE" \
+                sh /src/tests/system/run-in-container.sh "$role" || {
+                say "system: role $role failed"
+                status_s=1
+            }
+        done
+    fi
+    rm -rf "$docker_config"
+    trap - EXIT HUP INT TERM
+    [ $status_s -ne 0 ] || say "system: passed for roles $SYSTEM_ROLES"
+    return $status_s
+}
+
 [ $# -eq 1 ] || usage
 case $1 in
-    unit | render | lint) modes=$1 ;;
+    unit | render | lint | system) modes=$1 ;;
     all) modes="unit render lint" ;;
-    system)
-        say "system tests are not yet implemented (slice 3)"
-        exit 2
-        ;;
     *) usage ;;
 esac
 
