@@ -99,6 +99,18 @@ run_blocks() {
     has '^[ ]{2}privacy:' 'a privacy job'
 }
 
+@test "ci.yml: history job checks the PR head against its base branch" {
+    has '^[ ]{2}history:' 'a history job'
+    has 'scripts/history-check\.sh' 'a scripts/history-check.sh call'
+    has 'github\.event\.pull_request\.head\.sha' 'the PR head sha (via env:)'
+    has 'github\.base_ref' 'the PR base branch (via env:)'
+    has 'github\.event\.repository\.default_branch' 'the default branch for push runs (via env:)'
+    # A job-level if: would leave a skipped "history" run on pushes, which
+    # GitHub counts as passing.
+    run awk '/^[ ]{2}history:/ { h = 1; next } h && /^[ ]{2}[^ ]/ { h = 0 } h && /^[ ]{4}if:/ { print }' "$CI"
+    expect_equal 'history job if:' '' "$output"
+}
+
 @test "ci.yml: test job runs on ubuntu-latest and windows-latest" {
     has 'ubuntu-latest' 'ubuntu-latest'
     has 'windows-latest' 'windows-latest'
