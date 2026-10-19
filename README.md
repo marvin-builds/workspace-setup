@@ -50,4 +50,6 @@ CI (`.github/workflows/ci.yml`) runs `unit` and `render` on Linux, `render`
 on Windows, `lint`, and the privacy checks with the denylist from the
 `WS_DENYLIST` Actions secret (see [docs/new-machine.md](docs/new-machine.md)).
 The privacy job also runs `scripts/privacy-check.sh text` on the branch
-name and, for pull requests, on the title and body.
+name and, for pull requests, on the title and body. The history job runs
+`scripts/history-check.sh`, which fails when a branch contains merge
+commits: rebase onto `main` instead of merging it in.
