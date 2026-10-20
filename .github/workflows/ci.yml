@@ -83,6 +83,18 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: scripts/history-check.sh "origin/$BASE_REF" "$HEAD_SHA"
 
+  # Layer 2: the real bootstrap in a minimal ubuntu:24.04 container per
+  # role, then ws doctor and the idempotency checks (tests/system/). Its
+  # check name stays "system" (no matrix), so it can be a required check.
+  system:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bootstrap, ws doctor and idempotency per role
+        run: tests/run.sh system
+
   privacy:
     runs-on: ubuntu-latest
     steps:

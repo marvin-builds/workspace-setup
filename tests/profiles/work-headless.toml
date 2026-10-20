@@ -5,3 +5,4 @@ form = "headless"
 name = "Test User"
 github_identities = "octo-one=11111111+octo-one@users.noreply.github.com octo-two=22222222+octo-two@users.noreply.github.com"
 ci = true
+repos_dir = "/home/test-user/dev"
