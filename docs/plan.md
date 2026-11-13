@@ -265,8 +265,8 @@ green, PR.
    red→green case. CI runs layers 0 and 1 on `ubuntu-latest` and
    `windows-latest`, the privacy checks (denylist from an Actions secret)
    and actionlint.
-3. **Bootstrap + `ws doctor`.** *Status: in progress on
-   `slice-03-bootstrap-doctor`, see [brief](briefs/03-bootstrap-doctor.md).*
+3. **Bootstrap + `ws doctor`.** *Status: merged (PR #6), see
+   [brief](briefs/03-bootstrap-doctor.md).*
    POSIX `bootstrap.sh` (installs a pinned
    chezmoi with checksum check, accepts a local source path for tests),
    `expect.yaml` format (incl. smoke commands, source paths, `absent`,
@@ -281,7 +281,8 @@ green, PR.
    overrides the managed XDG config) and checks that an identity file
    exists in `~/.config/git/identities/` for every owner in
    `github_identities` (`chezmoi apply` doesn't repair a deleted one).
-4. **Shell base.** Thin bashrc sourcing `~/.config/shell/*.sh` and the
+4. **Shell base.** *Status: implemented on `slice-04-shell-base`, see
+   [brief](briefs/04-shell-base.md).* Thin bashrc sourcing `~/.config/shell/*.sh` and the
    untracked `local/` drop-in, PATH for `~/.local/bin`, starship, emacs-mode
    line editing, first dated migration script that removes the old marker
    blocks and `ws-*` functions.

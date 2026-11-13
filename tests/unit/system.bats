@@ -268,3 +268,42 @@ expect_tmp_clean() {
         return 1
     }
 }
+
+# --------------------------------------- upgrade path (slice 4, 16)
+
+FIXTURE_OLD_RC="$SYS/fixtures/old-rc"
+FIXTURE_MIGRATED="$SYS/fixtures/old-rc.migrated"
+
+@test "system: the old-rc fixture holds all three old blocks, each closed" {
+    [ -f "$FIXTURE_OLD_RC" ] || { echo "missing tests/system/fixtures/old-rc" >&2; return 1; }
+    for name in 'ai-workspace' 'yazi-setup: y function' 'lazygit-setup: lg'; do
+        expect_equal "begin lines for $name" 1 "$(grep -cxF "# >>> $name >>>" "$FIXTURE_OLD_RC")"
+        expect_equal "end lines for $name" 1 "$(grep -cxF "# <<< $name <<<" "$FIXTURE_OLD_RC")"
+    done
+}
+
+@test "system: old-rc.migrated is old-rc without its blocks" {
+    [ -f "$FIXTURE_MIGRATED" ] || { echo "missing tests/system/fixtures/old-rc.migrated" >&2; return 1; }
+    want=$(awk '/^# >>> .* >>>$/ { skip = 1; next } /^# <<< .* <<<$/ { skip = 0; next } !skip' "$FIXTURE_OLD_RC")
+    expect_equal "old-rc.migrated" "$want" "$(cat "$FIXTURE_MIGRATED")"
+}
+
+@test "system: the old-rc fixtures are fake and path-free" {
+    for f in "$FIXTURE_OLD_RC" "$FIXTURE_MIGRATED"; do
+        bad=$(grep -nE '(^|[^A-Za-z0-9_$])/(home|Users|root|mnt|opt|usr)/|[A-Za-z]:\\|@[A-Za-z0-9-]+\.[A-Za-z]' "$f" || true)
+        expect_equal "paths or addresses in ${f##*/}" "" "$bad"
+    done
+}
+
+@test "system: run-in-container.sh seeds one role with the old blocks and checks the migration" {
+    f="$SYS/run-in-container.sh"
+    for want in 'fixtures/old-rc' 'fixtures/old-rc.migrated' '.zshrc' 'old-block-'; do
+        grep -qF -- "$want" "$f" || { echo "run-in-container.sh lacks: $want" >&2; return 1; }
+    done
+    # The idempotency snapshot covers the rc files, so a re-run migration
+    # that changes them fails.
+    sed -n '/^config_files()/,/^}/p' "$f" | grep -qF '.zshrc' || {
+        echo "config_files does not cover ~/.zshrc" >&2
+        return 1
+    }
+}

@@ -1,0 +1,7 @@
+# Fake rc file for the upgrade test (slice 4): the marker blocks the old
+# setup repo wrote, with made-up content. No real paths or names.
+export WS_FAKE_BEFORE=1
+
+alias fake-between='echo between'
+
+export WS_FAKE_AFTER=1

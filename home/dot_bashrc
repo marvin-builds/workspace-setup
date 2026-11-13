@@ -1,0 +1,24 @@
+# shellcheck shell=bash
+# Managed by workspace-setup: edits here are overwritten. Topics live in
+# drop-ins under ~/.config/shell/; machine-only additions go in
+# ~/.config/shell/local/, which is not managed.
+
+# Scripts and scp source this file too; they must get nothing from it.
+case $- in
+    *i*) ;;
+    *) return ;;
+esac
+
+# Always ~/.config/shell: chezmoi installs there whatever XDG_CONFIG_HOME
+# says. An empty or missing dir must expand to nothing, even under the
+# caller's failglob, so the glob options are set here and restored after.
+ws_globopts=$(shopt -p nullglob failglob)
+shopt -s nullglob
+shopt -u failglob
+# Managed drop-ins first, so local ones can override them.
+for ws_dropin in "$HOME"/.config/shell/*.sh "$HOME"/.config/shell/local/*.sh; do
+    # shellcheck source=/dev/null
+    [ -f "$ws_dropin" ] && [ -r "$ws_dropin" ] && . "$ws_dropin"
+done
+eval "$ws_globopts"
+unset ws_dropin ws_globopts
