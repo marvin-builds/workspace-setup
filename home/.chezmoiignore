@@ -4,3 +4,12 @@
 {{ else -}}
 .chezmoiscripts/git-identities.ps1
 {{ end -}}
+
+{{- /* The bash base and the old rc migration are Linux only, like their
+       os: [linux] checks; Git Bash and macOS come in their own phases. */ -}}
+{{ if ne .chezmoi.os "linux" -}}
+.bashrc
+.config/shell
+.config/shell/**
+.chezmoiscripts/migrate-20261113-old-rc-blocks.sh
+{{ end -}}

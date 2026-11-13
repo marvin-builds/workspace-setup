@@ -9,3 +9,7 @@ scripts/* text eol=lf
 *.sh.tmpl text eol=lf
 *.ps1 text eol=crlf
 home/dot_local/bin/executable_ws text eol=lf
+# Byte-for-byte checks of the rc migration and the owned bashrc need LF on
+# every checkout.
+home/dot_bashrc text eol=lf
+tests/system/fixtures/* text eol=lf
