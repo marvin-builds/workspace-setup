@@ -1,0 +1,50 @@
+{{- /*
+  The check list for `ws doctor`, rendered from tests/expect.yaml (read from
+  the work tree, so the source must be a clone of workspace-setup) and
+  filtered by OS, role and form. One check per line, fields separated by
+  one tab (format in tests/render/expect-tsv.bats):
+
+    <id> command <name> <source> <smoke>   source and smoke may be empty
+    <id> file    <path>
+    <id> absent  <path>
+    <id> line    <file> <count> <text>
+
+  Plus one file check per GitHub identity file from github_identities
+  (written by scripts/git-identities.sh), so a deleted one shows up; their
+  ids are numbered (git-identity-1, ...) and don't name the account.
+  This template only filters and prints; the checks live in ws-doctor.sh.
+*/ -}}
+{{- $yaml := joinPath .chezmoi.workingTree "tests" "expect.yaml" -}}
+{{- if not (stat $yaml) -}}
+{{-   fail (printf "%s not found: the chezmoi source must be a git clone of workspace-setup (.chezmoi.workingTree is its root)" $yaml) -}}
+{{- end -}}
+{{- $machine := dict "os" .chezmoi.os "roles" .role "forms" .form -}}
+{{- range (include $yaml | fromYaml).checks -}}
+{{-   $c := . -}}
+{{-   $keep := true -}}
+{{-   range $filter, $value := $machine -}}
+{{-     if and (hasKey $c $filter) (not (has $value (get $c $filter))) }}{{ $keep = false }}{{ end -}}
+{{-   end -}}
+{{-   if $keep -}}
+{{-     if hasKey $c "command" -}}
+{{        printf "%s\tcommand\t%s\t%s\t%s\n" $c.id $c.command (get $c "source" | default "") (get $c "smoke" | default "") }}
+{{-     else if hasKey $c "file" -}}
+{{        printf "%s\tfile\t%s\n" $c.id $c.file }}
+{{-     else if hasKey $c "absent" -}}
+{{        printf "%s\tabsent\t%s\n" $c.id $c.absent }}
+{{-     else if hasKey $c "line" -}}
+{{        printf "%s\tline\t%s\t%d\t%s\n" $c.id $c.line.file (int $c.line.count) $c.line.text }}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- $identities := "~/.config/git/identities" -}}
+{{- printf "git-identities-includes\tfile\t%s/.includes\n" $identities -}}
+{{- printf "git-identities-conflict\tfile\t%s/.conflict\n" $identities -}}
+{{- /* Numbered ids, so ws doctor output never names an account. */ -}}
+{{- $n := 0 -}}
+{{- range splitList " " (.github_identities | replace "\t" " ") -}}
+{{-   if . -}}
+{{-     $n = add1 $n -}}
+{{-     printf "git-identity-%d\tfile\t%s/%s\n" $n $identities (regexReplaceAll "=.*" . "") -}}
+{{-   end -}}
+{{- end -}}

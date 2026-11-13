@@ -6,10 +6,18 @@
   github_identities: space-separated owner=email pairs, one per GitHub
   account, with the account's noreply address. They pick the commit email
   per remote (dot_config/git/config.tmpl, scripts/git-identities.sh).
+
+  repos_dir: where my git clones live (ws doctor checks their hooks).
+  Defaults to the parent of the clone that is chezmoi's source.
+
+  sourceDir: the clone passed to `chezmoi init --source` (bootstrap.sh),
+  recorded so a later plain `chezmoi apply` uses it too. It is the work
+  tree root; chezmoi 2.73.1 still honours its .chezmoiroot (home/).
 */ -}}
 {{- $role := promptChoiceOnce . "role" "Role" (list "personal" "work") -}}
 {{- $form := promptChoiceOnce . "form" "Form" (list "desktop" "headless" "wsl" "container") -}}
 {{- $name := promptStringOnce . "name" "Name" -}}
 {{- $githubIdentities := promptStringOnce . "github_identities" "GitHub identities" -}}
 {{- $ci := promptBoolOnce . "ci" "CI" false -}}
-{{- dict "data" (dict "role" $role "form" $form "name" $name "github_identities" $githubIdentities "ci" $ci) | toToml -}}
+{{- $reposDir := promptStringOnce . "repos_dir" "Repos dir" (dir .chezmoi.workingTree) -}}
+{{- dict "sourceDir" .chezmoi.workingTree "data" (dict "role" $role "form" $form "name" $name "github_identities" $githubIdentities "ci" $ci "repos_dir" $reposDir) | toToml -}}

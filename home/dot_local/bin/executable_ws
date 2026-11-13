@@ -1,0 +1,43 @@
+#!/bin/sh
+# ws: entry point for the workspace commands (workspace-setup,
+# home/dot_local/bin/executable_ws).
+#
+# `ws <cmd> [args]` runs ~/.local/libexec/ws/ws-<cmd>.<ext>, the interpreter
+# picked by extension: .sh runs with sh. Other extensions are reserved.
+# No, an unknown or a missing command exits 2 and lists the available ones.
+
+LIBEXEC="$HOME/.local/libexec/ws"
+
+# available: the command names in LIBEXEC, one per line.
+available() {
+    for f in "$LIBEXEC"/ws-*.sh; do
+        [ -f "$f" ] || continue
+        name=${f##*/ws-}
+        printf '%s\n' "${name%.sh}"
+    done
+}
+
+usage() {
+    [ -z "${1:-}" ] || printf 'ws: %s\n' "$1" >&2
+    printf 'usage: ws <command> [args]\n' >&2
+    cmds=$(available)
+    if [ -n "$cmds" ]; then
+        printf 'commands:\n' >&2
+        printf '%s\n' "$cmds" | sed 's/^/  /' >&2
+    else
+        printf 'no commands in %s\n' "$LIBEXEC" >&2
+    fi
+    exit 2
+}
+
+[ $# -gt 0 ] || usage
+cmd=$1
+shift
+
+case $cmd in
+    '' | */* | .* | -*) usage "unknown command '$cmd'" ;;
+esac
+
+script="$LIBEXEC/ws-$cmd.sh"
+[ -f "$script" ] || usage "unknown command '$cmd'"
+exec sh "$script" "$@"

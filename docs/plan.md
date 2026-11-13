@@ -258,19 +258,22 @@ green, PR.
    the repo, staged-file scan as pre-commit hook, commit-email check, noreply
    email set for this repo via `includeIf`.
 2. **Test harness + CI skeleton.** *Status: implemented on
-   `slice-02-test-harness`, see [brief](briefs/02-test-harness.md); in
-   review as a PR. Known limitation: issue #2.* `tests/run.sh` (unit and render modes),
+   `slice-02-test-harness`, see [brief](briefs/02-test-harness.md); merged
+   (PR #3). Known limitation: issue #2.* `tests/run.sh` (unit and render modes),
    bats setup, `tests/profiles/` for role × form, minimal
    `.chezmoi.toml.tmpl`, one managed file (git config) as the first
    red→green case. CI runs layers 0 and 1 on `ubuntu-latest` and
    `windows-latest`, the privacy checks (denylist from an Actions secret)
    and actionlint.
-3. **Bootstrap + `ws doctor`.** POSIX `bootstrap.sh` (installs a pinned
+3. **Bootstrap + `ws doctor`.** *Status: in progress on
+   `slice-03-bootstrap-doctor`, see [brief](briefs/03-bootstrap-doctor.md).*
+   POSIX `bootstrap.sh` (installs a pinned
    chezmoi with checksum check, accepts a local source path for tests),
    `expect.yaml` format (incl. smoke commands, source paths, `absent`,
    role/form filters), `ws` dispatcher + `ws doctor` (drift report included),
    CI system job in a minimal container as a non-root user with both
-   idempotency checks, runner-VM job, weekly schedule. Hooks convention:
+   idempotency checks, weekly schedule (the runner-VM job moves to slice 5,
+   with the first flatpak package, since nothing earlier needs it). Hooks convention:
    a repo that ships `.githooks/` gets `core.hooksPath=.githooks`;
    bootstrap applies it to the setup repo it cloned, and `ws doctor`
    flags clones with `.githooks/` but without the setting. Git identity:
@@ -285,7 +288,8 @@ green, PR.
 5. **Packages.** `packages.yaml` JSON Schema + Linux installer (apt, apt repos
    with key fingerprint and deb822 sources, flatpak), role/form filtering,
    weekly check that every package id exists (M5). First entries: git, gh,
-   ripgrep, fzf, glow (Charm repo), `file`.
+   ripgrep, fzf, glow (Charm repo), `file`. Runner-VM CI job (layer 3)
+   for the flatpak path, moved here from slice 3.
 6. **Runtimes and binary tools via mise.** `mise.toml` + `mise.lock`,
    `mise install --locked`, `jdx/mise-action` with `GITHUB_TOKEN` in CI.
    node, python, uv, and yazi (check the aqua registry first). Replaces
@@ -372,6 +376,9 @@ is retired machine by machine.
 - GNOME settings are in scope, narrowly: curated `gsettings` keys for
   `form=desktop`, no `dconf dump /`; extensions stay manual.
 - Password manager: Bitwarden via `rbw`.
+- chezmoi's source is my dev clone (`~/dev/workspace-setup` by default),
+  not `~/.local/share/chezmoi`, so there is one copy. Bootstrap starts
+  with `curl … | sh` and takes the chezmoi pin from `tools.lock`.
 
 ## Open decisions
 
