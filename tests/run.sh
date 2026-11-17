@@ -70,7 +70,12 @@ mode_unit() {
 }
 
 mode_render() {
-    fetch chezmoi bats-core || return 1
+    # The rendered shell files are linted with shellcheck, which has no
+    # Windows build; those files are not rendered on Windows.
+    case $(uname -s) in
+        MINGW* | MSYS*) fetch chezmoi bats-core || return 1 ;;
+        *) fetch chezmoi bats-core shellcheck || return 1 ;;
+    esac
     run_bats tests/render
 }
 

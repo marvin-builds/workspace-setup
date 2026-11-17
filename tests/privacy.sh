@@ -1230,6 +1230,15 @@ case_gitattributes() {
     attr_is home/some/setup.ps1 eol crlf
 }
 
+# Slice 4, decision 30: the bashrc and the rc fixtures stay LF on every
+# checkout, so the byte-for-byte migration checks hold on Windows too.
+case_gitattributes_shell() {
+    attr_is home/dot_bashrc eol lf || return 1
+    attr_is tests/system/fixtures/old-rc eol lf || return 1
+    attr_is tests/system/fixtures/old-rc.migrated eol lf || return 1
+    attr_is tests/system/fixtures/any-new-fixture eol lf
+}
+
 case_gitignore() {
     [ -f "$REPO_ROOT/.gitignore" ] || { fail ".gitignore missing"; return 1; }
     for p in .cache/bin/betterleaks .DS_Store Thumbs.db notes.txt.swp; do
@@ -1254,6 +1263,7 @@ case_license() {
 run_case "file: .chezmoiroot contains home" case_chezmoiroot
 run_case "file: home/.chezmoiversion contains 2.73.1" case_chezmoiversion
 run_case "file: .gitattributes text=auto, lf for sh/scripts/hooks, crlf for ps1" case_gitattributes
+run_case "file: .gitattributes lf for home/dot_bashrc and tests/system/fixtures/*" case_gitattributes_shell
 run_case "file: .gitignore covers .cache/ and editor/OS litter" case_gitignore
 run_case "file: LICENSE is MIT with 2026 Marvin Mai" case_license
 run_case "hooks: pre-commit runs staged, pre-push runs history and emails" case_hooks

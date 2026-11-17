@@ -40,3 +40,50 @@ checks:
 
   - id: expect-tsv
     file: ~/.config/ws/expect.tsv
+
+  # Shell base (slice 4). Linux only: Git Bash comes with the Windows phase.
+  - id: bashrc
+    os: [linux]
+    file: ~/.bashrc
+
+  # ~/.local/bin is in PATH exactly once in a new interactive bash and in a
+  # bash started from it. The check is exported as a function, so the nested
+  # shell runs it after its own ~/.bashrc. bash starts in a clean
+  # environment, so this checks the bashrc, not the caller's PATH (a login
+  # shell has ~/.local/bin twice through Ubuntu's ~/.profile).
+  - id: shell-path
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''ws_path_once() { [ "$(printf "%s\n" "$PATH" | tr : "\n" | grep -cxF "$HOME/.local/bin")" = 1 ]; }; ws_path_once && export -f ws_path_once && bash -ic ws_path_once'''
+
+  # Starts in vi mode, so only ~/.bashrc can turn emacs mode on.
+  - id: shell-emacs
+    os: [linux]
+    command: bash
+    smoke: bash -o vi -ic 'shopt -qo emacs'
+
+  # Marker blocks the old setup repo wrote into rc files; the migration
+  # script removes them (a missing file counts as 0).
+  - id: old-block-ai-workspace-bashrc
+    os: [linux]
+    line: {file: ~/.bashrc, text: "# >>> ai-workspace >>>", count: 0}
+
+  - id: old-block-ai-workspace-zshrc
+    os: [linux]
+    line: {file: ~/.zshrc, text: "# >>> ai-workspace >>>", count: 0}
+
+  - id: old-block-yazi-bashrc
+    os: [linux]
+    line: {file: ~/.bashrc, text: "# >>> yazi-setup: y function >>>", count: 0}
+
+  - id: old-block-yazi-zshrc
+    os: [linux]
+    line: {file: ~/.zshrc, text: "# >>> yazi-setup: y function >>>", count: 0}
+
+  - id: old-block-lazygit-bashrc
+    os: [linux]
+    line: {file: ~/.bashrc, text: "# >>> lazygit-setup: lg >>>", count: 0}
+
+  - id: old-block-lazygit-zshrc
+    os: [linux]
+    line: {file: ~/.zshrc, text: "# >>> lazygit-setup: lg >>>", count: 0}

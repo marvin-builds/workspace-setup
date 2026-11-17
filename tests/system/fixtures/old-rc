@@ -1,0 +1,17 @@
+# Fake rc file for the upgrade test (slice 4): the marker blocks the old
+# setup repo wrote, with made-up content. No real paths or names.
+export WS_FAKE_BEFORE=1
+
+# >>> ai-workspace >>>
+ws() { echo "fake ws $*"; }
+notes() { cd "$HOME/fake-notes" || return; }
+# <<< ai-workspace <<<
+alias fake-between='echo between'
+# >>> yazi-setup: y function >>>
+y() { echo fake-yazi; }
+# <<< yazi-setup: y function <<<
+
+# >>> lazygit-setup: lg >>>
+lg() { echo fake-lazygit; }
+# <<< lazygit-setup: lg <<<
+export WS_FAKE_AFTER=1

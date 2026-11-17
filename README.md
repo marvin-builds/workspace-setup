@@ -35,6 +35,10 @@ again changes nothing:
    once and records the source, so a later plain `chezmoi apply` uses the
    same clone.
 
+The apply replaces an existing `~/.bashrc` with the managed one. Back it
+up first, or move lines that belong only to this machine into a file in
+`~/.config/shell/local/`, which the managed bashrc sources.
+
 Options, passed after `sh -s --` when piping:
 `bootstrap.sh [--source-dir DIR] [--repo URL] [-- <chezmoi init args>]`
 (`WS_SOURCE_DIR` and `WS_REPO_URL` work too). Arguments after `--` go to
