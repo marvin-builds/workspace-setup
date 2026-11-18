@@ -13,3 +13,9 @@
 .config/shell/**
 .chezmoiscripts/migrate-20261113-old-rc-blocks.sh
 {{ end -}}
+
+{{- /* The package installer uses apt (slice 5); winget, scoop and brew
+       come with their OS phases. */ -}}
+{{ if ne .chezmoi.os "linux" -}}
+.chezmoiscripts/install-packages.sh
+{{ end -}}

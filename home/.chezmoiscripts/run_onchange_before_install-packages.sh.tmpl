@@ -1,0 +1,65 @@
+{{- /* The apt ids of packages.yaml for this machine's role and form, and
+       the apt repos they come from, as data for scripts/install-apt.sh
+       (format in that script's header). A filter that is missing means
+       all; an apt id of null means not on apt. */ -}}
+{{- $role := .role -}}
+{{- $form := .form -}}
+{{- $lines := list -}}
+{{- $needed := dict -}}
+{{- range $name, $p := .packages -}}
+{{-   if and $p.apt (or (not (hasKey $p "roles")) (has $role $p.roles)) (or (not (hasKey $p "forms")) (has $form $p.forms)) -}}
+{{-     $lines = append $lines (printf "package\t%s" (toString $p.apt)) -}}
+{{-     if hasKey $p "apt_repo" -}}
+{{-       $_ := set $needed (toString $p.apt_repo) true -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- range $name, $r := .apt_repos -}}
+{{-   if hasKey $needed $name -}}
+{{-     $archs := "" -}}
+{{-     if hasKey $r "architectures" -}}
+{{-       $archs = join " " $r.architectures -}}
+{{-     end -}}
+{{-     $lines = append $lines (printf "repo\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" $name (toString $r.key.url) (join " " $r.key.fingerprints) (toString $r.key.sha256) (join " " $r.uris) (join " " $r.suites) (join " " $r.components) $archs) -}}
+{{-   end -}}
+{{- end -}}
+{{- /* Values hold no tab or line break, so every line keeps its fields and
+       none can end the here-doc below. install-apt.sh validates the rest. */ -}}
+{{- range $lines -}}
+{{-   if ne (len (splitList "\t" .)) (ternary 2 9 (hasPrefix "package\t" .)) -}}
+{{-     fail (printf "packages.yaml: a value holds a tab or line break: %q" .) -}}
+{{-   end -}}
+{{-   if regexMatch "[\r\n]" . -}}
+{{-     fail (printf "packages.yaml: a value holds a line break: %q" .) -}}
+{{-   end -}}
+{{- end -}}
+{{- $data := join "\n" $lines -}}
+{{- $script := joinPath .chezmoi.workingTree "scripts" "install-apt.sh" -}}
+{{- if not (stat $script) -}}
+{{-   fail (printf "%s not found: the chezmoi source must be a git clone of workspace-setup (.chezmoi.workingTree is its root)" $script) -}}
+{{- end -}}
+#!/bin/sh
+# Installs the apt packages of home/.chezmoidata/packages.yaml for this
+# machine's role and form ({{ $role }}, {{ $form }}) and adds the apt repos
+# they need. chezmoi reruns this whenever its rendered text changes: the
+# data below or the hash of the script that does the work.
+# scripts/install-apt.sh sha256: {{ include $script | sha256sum }}
+# data sha256: {{ $data | sha256sum }}
+# The quoted here-doc passes the data as text, never as shell code.
+# Linux only (.chezmoiignore).
+set -eu
+# Applying into another directory than the home (tests, previews) never
+# installs system packages.
+if [ "${CHEZMOI_DEST_DIR:-}" != "${CHEZMOI_HOME_DIR:-}" ]; then
+    printf 'install-packages: skipped, the destination %s is not the home %s\n' \
+        "${CHEZMOI_DEST_DIR:-}" "${CHEZMOI_HOME_DIR:-}"
+    exit 0
+fi
+script="$CHEZMOI_WORKING_TREE/scripts/install-apt.sh"
+[ -f "$script" ] || {
+    printf 'install-packages: %s not found; the chezmoi source must be a git clone of workspace-setup\n' "$script" >&2
+    exit 1
+}
+exec sh "$script" install <<'WS_APT_DATA'
+{{ $data }}
+WS_APT_DATA

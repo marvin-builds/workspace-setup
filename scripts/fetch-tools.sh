@@ -8,7 +8,8 @@
 # anything is extracted. Nothing is installed system-wide.
 #
 # Tools: betterleaks, chezmoi, actionlint, shellcheck, bats-core (installed
-# as .cache/bin/bats, with the bats-core tree in .cache/bats-core/).
+# as .cache/bin/bats, with the bats-core tree in .cache/bats-core/), jv (the
+# JSON Schema validator of santhosh-tekuri/jsonschema).
 # Platforms: Linux and macOS on amd64 and arm64, and Git Bash on Windows
 # (MINGW*/MSYS*, platform windows_amd64, .zip assets, .exe binaries) for the
 # tools that publish Windows builds.
@@ -18,7 +19,7 @@
 
 set -eu
 
-TOOLS="betterleaks chezmoi actionlint shellcheck bats-core"
+TOOLS="betterleaks chezmoi actionlint shellcheck bats-core jv"
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 LOCK="$REPO_ROOT/scripts/tools.lock"
 CACHE_DIR="$REPO_ROOT/.cache"
@@ -115,6 +116,15 @@ spec() {
             url="https://github.com/bats-core/bats-core/archive/refs/tags/v$2.tar.gz"
             member="bats-core-$2"
             ;;
+        jv)
+            if [ "$os" = windows ]; then
+                asset="jv-v$2-$os-$arch.zip"
+            else
+                asset="jv-v$2-$os-$arch.tar.gz"
+            fi
+            url="https://github.com/santhosh-tekuri/jsonschema/releases/download/v$2/$asset"
+            member="jv$exe"
+            ;;
     esac
     case $1 in
         bats-core) bin="$BIN_DIR/bats" ;;
@@ -143,6 +153,18 @@ installed_version_ok() {
             ;;
         bats-core)
             [ "$("$bin" --version 2>/dev/null)" = "Bats $2" ]
+            ;;
+        jv)
+            # jv prints a Go pseudo-version, not the tag: the tag's commit
+            # identifies the release. A new pin adds its commit here.
+            case $2 in
+                6.0.3) commit=b0fc661f4939 ;;
+                *) commit=$2 ;;
+            esac
+            case $("$bin" --version 2>/dev/null) in
+                *"$commit"*) return 0 ;;
+                *) return 1 ;;
+            esac
             ;;
     esac
 }
