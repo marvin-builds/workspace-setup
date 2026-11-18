@@ -1,0 +1,19 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# The old flat key_url and fingerprints (decision 47; the flat hash field
+# is left out, since a key-named field with a long hex value trips the
+# privacy scanner).
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: repo
+apt_repos:
+  repo:
+    key_url: https://example.org/keys/repo.asc
+    fingerprints: [0123456789ABCDEF0123456789ABCDEF01234567]
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]

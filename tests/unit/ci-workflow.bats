@@ -187,3 +187,48 @@ pull_request_types() {
         }
     done
 }
+
+# ------------------------------------------ package ids (slice 5, 19-20)
+
+# job_block <name>: the lines of a top-level job, its header included.
+job_block() {
+    awk -v j="$1" '
+        $0 ~ "^[ ]{2}" j ":[ ]*$" { injob = 1; print; next }
+        injob && /^[ ]{2}[^ #]/ { injob = 0 }
+        injob { print }
+    ' "$CI"
+}
+
+@test "ci.yml: packages job runs scripts/check-package-ids.sh on every event" {
+    block=$(job_block packages)
+    [ -n "$block" ] || { echo "ci.yml has no packages job" >&2; return 1; }
+    printf '%s\n' "$block" | grep -qE 'scripts/check-package-ids\.sh' || {
+        printf 'packages job does not run scripts/check-package-ids.sh:\n%s\n' "$block" >&2
+        return 1
+    }
+    printf '%s\n' "$block" | grep -qE '^[ ]{4}runs-on:[ ]*ubuntu-' || {
+        echo "packages job does not run on an ubuntu runner" >&2
+        return 1
+    }
+    # No job- or step-level if:, so it also runs on the weekly schedule.
+    bad=$(printf '%s\n' "$block" | grep -E '^[ ]+(- )?if:' || true)
+    expect_equal "if: lines in the packages job" "" "$bad"
+}
+
+@test "ci.yml: packages job has its own tool cache key (decision 41)" {
+    block=$(job_block packages)
+    [ -n "$block" ] || { echo "ci.yml has no packages job" >&2; return 1; }
+    keys=$(printf '%s\n' "$block" | sed -n 's/^[ ]*key:[ ]*//p')
+    [ -n "$keys" ] || { echo "packages job has no cache key" >&2; return 1; }
+    others=$(awk '
+        /^jobs:/ { injobs = 1; next }
+        injobs && /^[ ]{2}[a-z][a-z0-9_-]*:[ ]*$/ { job = $1; sub(/:$/, "", job); next }
+        injobs && job != "packages" && /^[ ]*key:/ { sub(/^[ ]*key:[ ]*/, ""); print }
+    ' "$CI")
+    printf '%s\n' "$keys" | while IFS= read -r k; do
+        if printf '%s\n' "$others" | grep -qxF -- "$k"; then
+            echo "packages job shares its cache key with another job: $k" >&2
+            exit 1
+        fi
+    done
+}

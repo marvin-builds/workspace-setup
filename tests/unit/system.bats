@@ -110,7 +110,8 @@ EOF
     expect_status 0
     for want in 'bootstrap.sh' 'ws doctor' 'chezmoi apply' 'chezmoi diff' \
         'delete-bucket --bucket=scriptState' 'delete-bucket --bucket=entryState' \
-        'chezmoi verify' 'Form=container'; do
+        'chezmoi verify' 'Form=container' '/etc/apt/sources.list.d' \
+        '/etc/apt/keyrings'; do
         grep -qF -- "$want" "$f" || { echo "run-in-container.sh lacks: $want" >&2; return 1; }
     done
 }

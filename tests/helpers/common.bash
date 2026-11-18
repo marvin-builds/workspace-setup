@@ -41,7 +41,42 @@ ws_isolate() {
         TMPDIR GIT_CONFIG_NOSYSTEM
     unset GIT_CONFIG_GLOBAL GIT_DIR GIT_WORK_TREE GIT_AUTHOR_NAME \
         GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL \
-        WS_DENYLIST
+        WS_DENYLIST WS_APT_ROOT
+    ws_guard_system
+}
+
+# ws_guard_system: puts failing stubs for sudo, apt-get and apt first on
+# PATH (slice 5, decided with the test writer), so no test can reach the
+# real ones through PATH, for example through the package installer that
+# chezmoi apply runs. Each stub names itself on stderr, appends its
+# command line to $WS_GUARD_LOG and exits 1. Tests that need working stubs
+# put their own directory before this one.
+ws_guard_system() {
+    WS_GUARD_BIN="$BATS_TEST_TMPDIR/guard-bin"
+    WS_GUARD_LOG="$BATS_TEST_TMPDIR/guard.log"
+    mkdir -p "$WS_GUARD_BIN"
+    : >"$WS_GUARD_LOG"
+    for c in sudo apt-get apt; do
+        cat >"$WS_GUARD_BIN/$c" <<EOF
+#!/bin/sh
+printf '%s %s\n' '$c' "\$*" >>"$WS_GUARD_LOG"
+printf 'guard: the real %s is blocked in tests (%s)\n' '$c' "\$*" >&2
+exit 1
+EOF
+        chmod +x "$WS_GUARD_BIN/$c"
+    done
+    case ":$PATH:" in
+        *":$WS_GUARD_BIN:"*) ;;
+        *) PATH="$WS_GUARD_BIN:$PATH" ;;
+    esac
+    export PATH WS_GUARD_LOG
+}
+
+# expect_guard_untouched: no guard stub was called in this test.
+expect_guard_untouched() {
+    [ ! -s "$WS_GUARD_LOG" ] && return 0
+    printf 'a guarded system command was called:\n%s\n' "$(cat "$WS_GUARD_LOG")" >&2
+    return 1
 }
 
 # tool_path <name>: prints the cached binary (with .exe on Windows).

@@ -21,6 +21,11 @@
 # ~/.zshrc must equal fixtures/old-rc.migrated with its mode kept, and
 # ws doctor must report every old-block-* check as ok.
 #
+# Packages (slice 5, criterion 18): ws doctor checks the packages and
+# apt repo files from tests/expect.yaml after the bootstrap; idempotency
+# step 2 reruns the installer and requires /etc/apt/sources.list.d and
+# /etc/apt/keyrings to stay byte for byte unchanged.
+#
 # Fake data only: owners octo-one and octo-two, name Test User.
 
 set -eu
@@ -96,6 +101,19 @@ config_files() {
     } | LC_ALL=C sort | while IFS= read -r f; do cksum "$f"; done)
 }
 
+# apt_files: checksum, mode and owner of every file under the apt
+# directories the package installer writes (slice 5, criterion 18). A
+# rerun of the installer must leave them byte for byte unchanged.
+apt_files() {
+    for d in /etc/apt/sources.list.d /etc/apt/keyrings; do
+        [ -d "$d" ] || continue
+        find "$d" -type f | LC_ALL=C sort | while IFS= read -r f; do
+            printf '%s %s ' "$(stat -c '%a %U:%G' "$f")" "$f"
+            cksum <"$f"
+        done
+    done
+}
+
 script_state() {
     chezmoi state get-bucket --bucket=scriptState
 }
@@ -155,6 +173,8 @@ step "idempotency 2: clear script state, apply, doctor, verify"
 [ -n "$(script_state | tr -d '{}[:space:]')" ] ||
     fail "bucket scriptState is empty after apply; wrong bucket name?"
 config_before=$(config_files)
+apt_before=$(apt_files)
+[ -n "$apt_before" ] || fail "no files under /etc/apt/sources.list.d or /etc/apt/keyrings after the bootstrap"
 chezmoi state delete-bucket --bucket=scriptState || fail "delete-bucket scriptState"
 chezmoi state delete-bucket --bucket=entryState || fail "delete-bucket entryState"
 [ -z "$(script_state | tr -d '{}[:space:]')" ] || fail "scriptState still holds entries"
@@ -164,6 +184,8 @@ ws doctor || fail "ws doctor after re-running the scripts"
 chezmoi verify || fail "chezmoi verify after re-running the scripts"
 [ "$config_before" = "$(config_files)" ] ||
     fail "re-running the scripts changed files under ~/.config or ~/.local/bin"
+[ "$apt_before" = "$(apt_files)" ] ||
+    fail "re-running the package installer changed /etc/apt/sources.list.d or /etc/apt/keyrings"
 
 step "bootstrap again changes nothing"
 before=$(snapshot)

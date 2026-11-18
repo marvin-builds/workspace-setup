@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "home/.chezmoidata/packages.yaml",
+  "description": "What a machine gets from its package managers (slice 5, docs/briefs/05-packages.md, criteria 1 and 4). Cross references (every apt_repo names an apt_repos entry, every apt_repos entry is used) are checked by tests/unit/packages-data.bats, since a schema can't.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packages", "apt_repos"],
+  "properties": {
+    "packages": {
+      "description": "Logical name to per-OS ids.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/package" }
+    },
+    "apt_repos": {
+      "description": "Third-party apt repos. The keyring is /etc/apt/keyrings/ws-<name>.gpg and the sources file /etc/apt/sources.list.d/ws-<name>.sources.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/apt_repo" }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "apt_id": {
+      "description": "A Debian package name, or null: not on this manager.",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9+.-]+$"
+    },
+    "id": {
+      "description": "A package id of flatpak, winget, scoop or brew, or null: not on this manager. Letters, digits and + . _ / @ -, starting with a letter or digit.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9+._/@-]*$"
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apt", "flatpak", "winget", "scoop", "brew"],
+      "properties": {
+        "apt": { "$ref": "#/$defs/apt_id" },
+        "flatpak": { "$ref": "#/$defs/id" },
+        "winget": { "$ref": "#/$defs/id" },
+        "scoop": { "$ref": "#/$defs/id" },
+        "brew": { "$ref": "#/$defs/id" },
+        "apt_repo": { "$ref": "#/$defs/name" },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["personal", "work"] }
+        },
+        "forms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["desktop", "headless", "wsl", "container"] }
+        }
+      },
+      "dependentSchemas": {
+        "apt_repo": {
+          "properties": { "apt": { "type": "string" } }
+        }
+      }
+    },
+    "https_url": {
+      "type": "string",
+      "pattern": "^https://[^\\s/]+(/\\S*)?$"
+    },
+    "deb822_word": {
+      "description": "One value of a deb822 field: no whitespace, no shell quoting characters. * is allowed (Charm's suite and component).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9*][A-Za-z0-9*._/+-]*$"
+    },
+    "apt_repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "uris", "suites", "components"],
+      "properties": {
+        "key": {
+          "description": "The repo's signing key as served (decision 47).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "sha256", "fingerprints"],
+          "properties": {
+            "url": { "$ref": "#/$defs/https_url" },
+            "sha256": {
+              "description": "sha256 of the key file as served at url, 64 lower-case hex digits (decision 42).",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "fingerprints": {
+              "description": "Every primary key fingerprint the keyring holds, each 40 hex digits, upper case, no spaces. The keyring's set of primary keys must equal this set (decision 32).",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[0-9A-F]{40}$" }
+            }
+          }
+        },
+        "uris": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/https_url" }
+        },
+        "suites": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/deb822_word" }
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/deb822_word" }
+        },
+        "architectures": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9-]+$" }
+        }
+      }
+    }
+  }
+}

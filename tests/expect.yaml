@@ -87,3 +87,59 @@ checks:
   - id: old-block-lazygit-zshrc
     os: [linux]
     line: {file: ~/.zshrc, text: "# >>> lazygit-setup: lg >>>", count: 0}
+
+  # Packages (slice 5): apt installs them to /usr/bin, so a copy elsewhere
+  # on PATH doesn't pass. Ids are pkg-<logical name in packages.yaml>; the
+  # all-OS `git` check above stays, pkg-git adds the Linux source.
+  - id: pkg-git
+    os: [linux]
+    command: git
+    source: /usr/bin/git
+    smoke: git --version
+
+  - id: pkg-gh
+    os: [linux]
+    command: gh
+    source: /usr/bin/gh
+    smoke: gh --version
+
+  - id: pkg-ripgrep
+    os: [linux]
+    command: rg
+    source: /usr/bin/rg
+    smoke: rg --version
+
+  - id: pkg-fzf
+    os: [linux]
+    command: fzf
+    source: /usr/bin/fzf
+    smoke: fzf --version
+
+  - id: pkg-glow
+    os: [linux]
+    command: glow
+    source: /usr/bin/glow
+    smoke: glow --version
+
+  - id: pkg-file
+    os: [linux]
+    command: file
+    source: /usr/bin/file
+    smoke: file --version
+
+  # Third-party apt repos: keyring and deb822 sources, ws-<repo name>.
+  - id: apt-keyring-github-cli
+    os: [linux]
+    file: /etc/apt/keyrings/ws-github-cli.gpg
+
+  - id: apt-sources-github-cli
+    os: [linux]
+    file: /etc/apt/sources.list.d/ws-github-cli.sources
+
+  - id: apt-keyring-charm
+    os: [linux]
+    file: /etc/apt/keyrings/ws-charm.gpg
+
+  - id: apt-sources-charm
+    os: [linux]
+    file: /etc/apt/sources.list.d/ws-charm.sources

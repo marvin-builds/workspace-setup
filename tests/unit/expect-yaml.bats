@@ -148,6 +148,18 @@ entry_json() {
     expect_equal expect-tsv '{"file":"~/.config/ws/expect.tsv","id":"expect-tsv"}' "$(entry_json expect-tsv)"
 }
 
+@test "expect.yaml: package and apt repo checks, Linux only (slice 5, criteria 14, 15)" {
+    for pair in git:git gh:gh ripgrep:rg fzf:fzf glow:glow file:file; do
+        n=${pair%%:*}
+        c=${pair#*:}
+        expect_equal "pkg-$n" "{\"command\":\"$c\",\"id\":\"pkg-$n\",\"os\":[\"linux\"],\"smoke\":\"$c --version\",\"source\":\"/usr/bin/$c\"}" "$(entry_json "pkg-$n")"
+    done
+    for r in github-cli charm; do
+        expect_equal "apt-keyring-$r" "{\"file\":\"/etc/apt/keyrings/ws-$r.gpg\",\"id\":\"apt-keyring-$r\",\"os\":[\"linux\"]}" "$(entry_json "apt-keyring-$r")"
+        expect_equal "apt-sources-$r" "{\"file\":\"/etc/apt/sources.list.d/ws-$r.sources\",\"id\":\"apt-sources-$r\",\"os\":[\"linux\"]}" "$(entry_json "apt-sources-$r")"
+    done
+}
+
 # ------------------------------------------------- the validator itself
 
 @test "validator: accepts every kind and filter (control)" {

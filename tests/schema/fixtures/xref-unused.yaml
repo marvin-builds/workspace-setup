@@ -1,0 +1,27 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# Schema-valid; apt_repos entry unused-repo is used by no package.
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: repo
+apt_repos:
+  repo:
+    key:
+      url: https://example.org/keys/repo.asc
+      sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      fingerprints: [0123456789ABCDEF0123456789ABCDEF01234567]
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]
+  unused-repo:
+    key:
+      url: https://example.org/keys/unused.asc
+      sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      fingerprints: [89ABCDEF0123456789ABCDEF0123456789ABCDEF]
+    uris: [https://example.org/unused]
+    suites: [stable]
+    components: [main]

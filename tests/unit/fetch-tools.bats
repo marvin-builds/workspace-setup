@@ -7,7 +7,8 @@
 #   scripts/fetch-tools.sh [tool...]
 #
 #   Tool names are the lock's first column: betterleaks, chezmoi,
-#   actionlint, shellcheck, bats-core. No arguments fetches all of them.
+#   actionlint, shellcheck, bats-core, jv (slice 5). No arguments fetches
+#   all of them.
 #   Binaries end up in <repo>/.cache/bin/ (bats-core as .cache/bin/bats).
 #   The lock keeps one line per asset: <tool> <version> <platform> <sha256>;
 #   platform keys are linux_amd64, linux_arm64, darwin_amd64, darwin_arm64
@@ -181,6 +182,17 @@ lock_has() {
     lock_has betterleaks 1.9.0 darwin_amd64 68dfd83458d9e7f90663daa7a81c7f944083b170dae82e4f5f8d0581ed519ef1
 }
 
+@test "tools.lock: jv 6.0.3 for five platforms (slice 5, schema validator)" {
+    # santhosh-tekuri/jsonschema cmd/jv. The release publishes only .md5
+    # files; these sha256s were computed from the downloaded assets, whose
+    # md5s matched the published ones.
+    lock_has jv 6.0.3 linux_amd64 36e9ab8481cc8e2cb27c8336decc9abdcbd606b05792ca88d6188e01ec28766b
+    lock_has jv 6.0.3 linux_arm64 a9b06c4d73bf3cbe9b3224aacef5329d96267c27febac1152db1ff1659550122
+    lock_has jv 6.0.3 darwin_amd64 f41e3541d0ba2b5f628d1a04701db3acefcf6aa1feb5c28e10f446dfc584952d
+    lock_has jv 6.0.3 darwin_arm64 d5962c5a7abe0c82be6b69bbed6bd5c9883462f13e0353ddca9878c46ec6ed6f
+    lock_has jv 6.0.3 windows_amd64 a1ab4c5b1e735de28d34401402624194474aa006db0926f0c99ec043e4795c2c
+}
+
 @test "tools.lock: every entry has four fields and a sha256" {
     bad=$(awk '
         /^[ \t]*(#|$)/ { next }
@@ -281,6 +293,26 @@ lock_has() {
 
 # -------------------------------------------------- unknown inputs
 
+@test "fetch-tools: jv linux amd64 checksum mismatch fails before extraction" {
+    fetch_fake Linux x86_64 jv
+    expect_bad_checksum_flow jv jv-v6.0.3-linux-amd64.tar.gz
+}
+
+@test "fetch-tools: jv linux aarch64 asset name" {
+    fetch_fake Linux aarch64 jv
+    expect_bad_checksum_flow jv jv-v6.0.3-linux-arm64.tar.gz
+}
+
+@test "fetch-tools: jv darwin arm64 asset name" {
+    fetch_fake Darwin arm64 jv
+    expect_bad_checksum_flow jv jv-v6.0.3-darwin-arm64.tar.gz
+}
+
+@test "fetch-tools: jv on Git Bash uses the windows-amd64 zip" {
+    fetch_fake MINGW64_NT-10.0-19045 x86_64 jv
+    expect_bad_checksum_flow jv jv-v6.0.3-windows-amd64.zip
+}
+
 @test "fetch-tools: unknown OS fails clearly without downloading" {
     fetch_fake SunOS x86_64 chezmoi
     expect_failure
@@ -369,6 +401,15 @@ real_fetch() {
     expect_output_matches '1\.14\.0'
 }
 
+@test "fetch-tools: real jv fetch installs a working validator" {
+    real_fetch jv
+    require_tool jv
+    printf '{"type": "object"}\n' >"$TEST_TMP/s.json"
+    printf 'a: 1\n' >"$TEST_TMP/i.yaml"
+    run "$(tool_path jv)" "$TEST_TMP/s.json" "$TEST_TMP/i.yaml"
+    expect_status 0
+}
+
 @test "fetch-tools: cached matching version is reused without downloading" {
     real_fetch chezmoi
     require_tool chezmoi
@@ -382,7 +423,7 @@ real_fetch() {
 
 @test "fetch-tools: no arguments covers every tool" {
     real_fetch
-    for t in betterleaks chezmoi actionlint shellcheck bats; do
+    for t in betterleaks chezmoi actionlint shellcheck bats jv; do
         [ -x "$TOOLS_BIN/$t" ] || [ -x "$TOOLS_BIN/$t.exe" ] || {
             echo "no-argument fetch left out $t" >&2
             return 1
@@ -396,7 +437,8 @@ real_fetch() {
     expect_no_download
     # ... and a missing tool is fetched by it.
     for pair in chezmoi:chezmoi_2.73.1 actionlint:actionlint_1.7.12 \
-        shellcheck:shellcheck-v0.11.0 betterleaks:betterleaks_1.9.0; do
+        shellcheck:shellcheck-v0.11.0 betterleaks:betterleaks_1.9.0 \
+        jv:jv-v6.0.3; do
         t=${pair%%:*}
         asset=${pair#*:}
         rm -rf "$ROOT/.cache"
