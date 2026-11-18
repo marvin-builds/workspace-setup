@@ -1,0 +1,19 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# Schema-valid; apt_repo names no apt_repos entry (missing-repo).
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: missing-repo
+apt_repos:
+  repo:
+    key:
+      url: https://example.org/keys/repo.asc
+      sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      fingerprints: [0123456789ABCDEF0123456789ABCDEF01234567]
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]

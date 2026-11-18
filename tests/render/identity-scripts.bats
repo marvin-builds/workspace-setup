@@ -107,8 +107,10 @@ expect_refused() {
     # repo path must appear (either separator: native paths on Windows),
     # and the shell's 127 must not. Since slice 3 the expect.tsv template
     # (which also reads from the work tree, and renders first) may be the
-    # one to stop, naming tests/expect.yaml instead.
-    expect_output_matches '(^|[^A-Za-z])(scripts[/\\]git-identities\.sh|tests[/\\]expect\.yaml)'
+    # one to stop, naming tests/expect.yaml instead, and since slice 5 the
+    # package installer template, naming scripts/install-apt.sh
+    # (decision 34).
+    expect_output_matches '(^|[^A-Za-z])(scripts[/\\](git-identities|install-apt)\.sh|tests[/\\]expect\.yaml)'
     expect_output_lacks 'exit status 127'
     expect_output_lacks ': not found'
 }

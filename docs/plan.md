@@ -281,12 +281,14 @@ green, PR.
    overrides the managed XDG config) and checks that an identity file
    exists in `~/.config/git/identities/` for every owner in
    `github_identities` (`chezmoi apply` doesn't repair a deleted one).
-4. **Shell base.** *Status: implemented on `slice-04-shell-base`, see
+4. **Shell base.** *Status: merged (PR #7), see
    [brief](briefs/04-shell-base.md).* Thin bashrc sourcing `~/.config/shell/*.sh` and the
    untracked `local/` drop-in, PATH for `~/.local/bin`, starship, emacs-mode
    line editing, first dated migration script that removes the old marker
    blocks and `ws-*` functions.
-5. **Packages.** `packages.yaml` JSON Schema + Linux installer (apt, apt repos
+5. **Packages.** *Status: implemented on `slice-05-packages`, see
+   [brief](briefs/05-packages.md). Flatpak and the runner-VM job wait for
+   the first app that needs them.* `packages.yaml` JSON Schema + Linux installer (apt, apt repos
    with key fingerprint and deb822 sources, flatpak), role/form filtering,
    weekly check that every package id exists (M5). First entries: git, gh,
    ripgrep, fzf, glow (Charm repo), `file`. Runner-VM CI job (layer 3)
@@ -323,7 +325,9 @@ green, PR.
     run on the real machine, real-machine `ws doctor` (secrets, sign-ins,
     shortcuts). Follows the steps in "Migration from the old setup". The
     migration removes `user.name` and `user.email` from `~/.gitconfig`, so
-    the per-owner identities from slice 2 take effect.
+    the per-owner identities from slice 2 take effect. A dated migration
+    removes vendor apt sources for repos that `packages.yaml` now owns
+    (slice 5 stops on them instead of breaking apt).
 
 Later phases: **Windows** (`bootstrap.ps1`, winget/scoop columns, PowerShell
 profile incl. OneDrive paths and encoding, `ws.cmd`/`ws.ps1` shims and a
@@ -374,6 +378,8 @@ is retired machine by machine.
   `expect.yaml` at apply time (filtered by OS, role and form), so a fresh
   machine needs no YAML parser.
 - Shell: bash only. zsh is not planned.
+- Removing a `packages.yaml` entry leaves the package installed (accepted
+  leftovers, slice 5); a `remove:` list comes when a real case needs one.
 - GNOME settings are in scope, narrowly: curated `gsettings` keys for
   `form=desktop`, no `dconf dump /`; extensions stay manual.
 - Password manager: Bitwarden via `rbw`.
@@ -383,6 +389,4 @@ is retired machine by machine.
 
 ## Open decisions
 
-- Removing packages: accept leftovers or add an explicit `remove:` list.
-  Decide in slice 5.
 - Everything macOS-specific: decided when a Mac is actually in use.

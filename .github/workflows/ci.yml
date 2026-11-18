@@ -95,6 +95,27 @@ jobs:
       - name: Bootstrap, ws doctor and idempotency per role
         run: tests/run.sh system
 
+  # Every apt id in home/.chezmoidata/packages.yaml, unfiltered, has an
+  # install candidate on ubuntu:24.04 with the apt repos added as the
+  # installer adds them (slice 5). No if:, so the weekly schedule catches
+  # upstream renames without a commit.
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache
+          # Own key: this job fetches only chezmoi, and a shared key would
+          # save that partial cache for the other jobs.
+          key: tools-chezmoi-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/tools.lock') }}
+      - name: Fetch chezmoi
+        run: scripts/fetch-tools.sh chezmoi
+      - name: Apt ids have install candidates
+        run: scripts/check-package-ids.sh
+
   privacy:
     runs-on: ubuntu-latest
     steps:

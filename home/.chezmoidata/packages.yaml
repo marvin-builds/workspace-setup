@@ -1,0 +1,88 @@
+# What a machine gets from its package managers (slice 5,
+# docs/briefs/05-packages.md). Validated by tests/schema/packages.schema.json.
+#
+# packages: logical name -> one id per package manager, or null ("not on
+#   this manager"). Every column is present on every entry, so a new OS
+#   phase shows each gap. Optional:
+#     apt_repo  the apt_repos entry the apt id comes from
+#     roles     personal and/or work (missing: all)
+#     forms     desktop, headless, wsl and/or container (missing: all)
+#   On Linux, run_onchange_before_install-packages.sh installs the apt ids
+#   for the machine's role and form. Removing an entry leaves the package
+#   installed.
+#
+# apt_repos: third-party apt repos. The signing key is downloaded from
+#   key.url; its sha256 as served must be key.sha256 (a vendor renewing
+#   the key needs a new pin, and the bump makes every machine fetch it),
+#   and the fingerprints of its primary keys (40 hex digits, upper case)
+#   must be exactly key.fingerprints: no pinned key missing, no extra key.
+#   Else nothing is written; a vendor adding a key needs a new pin. The
+#   keyring goes to /etc/apt/keyrings/ws-<name>.gpg, the deb822 sources to
+#   /etc/apt/sources.list.d/ws-<name>.sources.
+packages:
+  git:
+    apt: git
+    flatpak: null
+    winget: Git.Git
+    scoop: git
+    brew: git
+  gh:
+    apt: gh
+    flatpak: null
+    winget: GitHub.cli
+    scoop: gh
+    brew: gh
+    apt_repo: github-cli
+  ripgrep:
+    apt: ripgrep
+    flatpak: null
+    winget: BurntSushi.ripgrep.MSVC
+    scoop: ripgrep
+    brew: ripgrep
+  fzf:
+    apt: fzf
+    flatpak: null
+    winget: junegunn.fzf
+    scoop: fzf
+    brew: fzf
+  glow:
+    apt: glow
+    flatpak: null
+    winget: charmbracelet.glow
+    scoop: glow
+    brew: glow
+    apt_repo: charm
+  file:
+    apt: file
+    flatpak: null
+    winget: null
+    scoop: file
+    # macOS ships /usr/bin/file; Homebrew's file-formula is keg-only.
+    brew: null
+
+apt_repos:
+  # GitHub CLI's docs/install_linux.md, which lists both primary keys of
+  # the keyring: the first expired 2026-09-05, the second signs the repo.
+  github-cli:
+    key:
+      url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+      # The SHA256 install_linux.md publishes for the binary keyring.
+      sha256: 6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b
+      fingerprints:
+        - 2C6106201985B60E6C7AC87323F3D4EA75716059
+        - 7F38BBB59D064DBCB3D84D725612B36462313325
+    uris: [https://cli.github.com/packages]
+    suites: [stable]
+    components: [main]
+  # Charm's README (glow). Charm publishes no fingerprint: it was read from
+  # the downloaded key with `gpg --show-keys --with-colons` and matches the
+  # key on keyserver.ubuntu.com and the key at repo.charm.sh/yum/gpg.key.
+  charm:
+    key:
+      url: https://repo.charm.sh/apt/gpg.key
+      # Unpublished: the sha256 of the file as repo.charm.sh served it.
+      sha256: bfccddb028d4d6ad5758fc9c9778337fb446a8e5fb270894011616963e9a9c8a
+      fingerprints: [ED927B38BE981E53CA09153D03BBF595D4DFD35C]
+    uris: [https://repo.charm.sh/apt/]
+    suites: ["*"]
+    components: ["*"]

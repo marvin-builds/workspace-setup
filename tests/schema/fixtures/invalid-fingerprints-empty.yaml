@@ -1,0 +1,19 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# An empty fingerprints list.
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: repo
+apt_repos:
+  repo:
+    key:
+      url: https://example.org/keys/repo.asc
+      sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      fingerprints: []
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]

@@ -1,0 +1,103 @@
+# Fixture for the role and form filter (slice 5, criterion 17): used as
+# packages.yaml in a copy of the source state by
+# tests/render/packages.bats, and as a valid instance by
+# tests/unit/packages-data.bats. Fake data only: example.org and
+# example.com repos, made-up fingerprints.
+#
+# Who gets what (role-form):
+#   common-tool         everyone
+#   work-tool           role work
+#   personal-tool       role personal
+#   desktop-tool        form desktop or wsl
+#   work-headless-tool  work-headless only
+#   no-apt-tool         nobody on apt (apt: null)
+#   repo-a-tool         role personal, from fixture-a
+#   repo-b-tool         form container, from fixture-b
+#   repo-b-extra        role work, from fixture-b
+# So fixture-a is needed by every personal profile, fixture-b by every
+# work profile and by personal-container; work-container needs it for two
+# tools and must still get it once.
+packages:
+  common-tool:
+    apt: common-tool
+    flatpak: null
+    winget: Example.CommonTool
+    scoop: common-tool
+    brew: common-tool
+  work-tool:
+    apt: work-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    roles: [work]
+  personal-tool:
+    apt: personal-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: personal-tool
+    roles: [personal]
+  desktop-tool:
+    apt: desktop-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    forms: [desktop, wsl]
+  work-headless-tool:
+    apt: work-headless-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    roles: [work]
+    forms: [headless]
+  no-apt-tool:
+    apt: null
+    flatpak: org.example.NoAptTool
+    winget: Example.NoAptTool
+    scoop: null
+    brew: null
+  repo-a-tool:
+    apt: repo-a-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    apt_repo: fixture-a
+    roles: [personal]
+  repo-b-tool:
+    apt: repo-b-tool
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    apt_repo: fixture-b
+    forms: [container]
+  repo-b-extra:
+    apt: repo-b-extra
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    apt_repo: fixture-b
+    roles: [work]
+apt_repos:
+  fixture-a:
+    key:
+      url: https://example.org/keys/fixture-a.asc
+      sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      fingerprints: [0123456789ABCDEF0123456789ABCDEF01234567, 76543210FEDCBA9876543210FEDCBA9876543210]
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]
+    architectures: [amd64, arm64]
+  fixture-b:
+    key:
+      url: https://example.com/fixture-b.gpg
+      sha256: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      fingerprints: [89ABCDEF0123456789ABCDEF0123456789ABCDEF]
+    uris: [https://example.com/apt/, https://mirror.example.com/apt/]
+    suites: ["*"]
+    components: ["*"]

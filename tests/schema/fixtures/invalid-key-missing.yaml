@@ -1,0 +1,15 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# No key mapping on the repo (decision 47).
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: repo
+apt_repos:
+  repo:
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]

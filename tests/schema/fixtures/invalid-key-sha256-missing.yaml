@@ -1,0 +1,18 @@
+# Fixture for tests/unit/packages-data.bats (slice 5). Fake data only.
+# No key.sha256 (decision 42).
+packages:
+  tool:
+    apt: tool
+    flatpak: null
+    winget: Example.Tool
+    scoop: null
+    brew: tool
+    apt_repo: repo
+apt_repos:
+  repo:
+    key:
+      url: https://example.org/keys/repo.asc
+      fingerprints: [0123456789ABCDEF0123456789ABCDEF01234567]
+    uris: [https://example.org/apt]
+    suites: [stable]
+    components: [main]
