@@ -43,9 +43,22 @@
 #     - 50-completion.sh: with /usr/share/bash-completion/bash_completion
 #       present, its functions are loaded.
 #     - 60-editing.sh: a shell started with -o vi ends up in emacs mode.
+#     - 70-mise.sh (slice 6, criteria 11, 23): with `mise` on PATH, the
+#       output of `mise activate bash` is evaluated; without it, nothing
+#       is printed. It runs before 90-prompt.sh, so a starship that mise
+#       puts on PATH gives the prompt.
 #     - 90-prompt.sh: with `starship` on PATH, the output of
 #       `starship init bash` is evaluated; otherwise PS1 holds \u, \h and
 #       \w (or \W).
+#
+# Stub mise (slice 6, decided with the test writer): ~/.local/bin/mise in
+# the rendered home (10-path.sh puts ~/.local/bin on PATH, so the
+# expect.yaml smokes, which start bash with PATH=/usr/bin:/bin, find it
+# too). It logs its arguments to ~/.mise-stub.log; `mise activate bash`
+# prints code that sets WS_MISE_STUB=evaluated and adds
+# ~/.local/share/mise/installs/stub/1.0.0/bin to PATH once (or every time,
+# for the naive variant). That dir holds stub node, python, uv, starship,
+# yazi and ya.
 #
 # How bash is run: `env -i` with HOME=<render destination>, PATH=<stub
 # dir>:/usr/bin:/bin and TERM=dumb, stdin from /dev/null and, where setsid
@@ -62,7 +75,7 @@ bats_require_minimum_version 1.5.0
 
 load ../helpers/common
 
-DROPINS="10-path 20-history 30-defaults 40-aliases 50-completion 60-editing 90-prompt"
+DROPINS="10-path 20-history 30-defaults 40-aliases 50-completion 60-editing 70-mise 90-prompt"
 MIGRATE_TARGET=.chezmoiscripts/migrate-20261113-old-rc-blocks.sh
 TAB=$(printf '\t')
 
@@ -569,6 +582,184 @@ shell_sh_c() {
     # Control: the same caller PATH with an empty bashrc still fails.
     : >"$DEST/.bashrc"
     run_smoke shell-path
+    expect_failure
+}
+
+# ------------------------------------- mise (slice 6, 11, 12, 14, 23)
+
+MISE_STUB_BIN_REL=.local/share/mise/installs/stub/1.0.0/bin
+
+# stub_tool <name> <version output>: a stub in the stub install dir.
+stub_tool() {
+    mkdir -p "$DEST/$MISE_STUB_BIN_REL"
+    cat >"$DEST/$MISE_STUB_BIN_REL/$1" <<EOF
+#!/bin/sh
+if [ "\${1:-}" = init ] && [ "\${2:-}" = bash ]; then
+    echo 'WS_STARSHIP_STUB=evaluated'
+    exit 0
+fi
+echo '$2'
+EOF
+    chmod +x "$DEST/$MISE_STUB_BIN_REL/$1"
+}
+
+# stub_mise [naive]: ~/.local/bin/mise and the stub tools (see header).
+stub_mise() {
+    stub_tool node v26.1.0
+    stub_tool python 'Python 3.14.2'
+    stub_tool uv 'uv 0.9.1'
+    stub_tool starship 'starship 1.24.0'
+    stub_tool yazi 'Yazi 25.5.31'
+    stub_tool ya 'Ya 25.5.31'
+    mkdir -p "$DEST/.local/bin"
+    if [ "${1:-}" = naive ]; then
+        activate='PATH="$HOME/'"$MISE_STUB_BIN_REL"':$PATH"; export PATH'
+    else
+        activate='WS_MISE_STUB=evaluated
+case ":$PATH:" in
+    *":$HOME/'"$MISE_STUB_BIN_REL"':"*) ;;
+    *) PATH="$HOME/'"$MISE_STUB_BIN_REL"':$PATH" ;;
+esac
+export PATH'
+    fi
+    {
+        printf '#!/bin/sh\n'
+        printf 'printf "%%s\\n" "$*" >>"$HOME/.mise-stub.log"\n'
+        printf 'if [ "${1:-} ${2:-}" = "activate bash" ]; then\n'
+        printf "    cat <<'WS_EOF'\n%s\nWS_EOF\nfi\n" "$activate"
+    } >"$DEST/.local/bin/mise"
+    chmod +x "$DEST/.local/bin/mise"
+}
+
+# no_mise_path: a copy of /usr/bin and /bin without mise and starship;
+# prints the dir.
+no_mise_path() {
+    d="$TEST_TMP/no-mise-bin"
+    mkdir -p "$d"
+    for src in /usr/bin /bin; do
+        for f in "$src"/*; do
+            n=${f##*/}
+            case $n in mise | starship) continue ;; esac
+            [ -e "$d/$n" ] || [ -L "$d/$n" ] || ln -s "$f" "$d/$n"
+        done
+    done
+    printf '%s\n' "$d"
+}
+
+require_mise_dropin() {
+    [ -f "$DEST/.config/shell/70-mise.sh" ] && return 0
+    echo "no ~/.config/shell/70-mise.sh rendered" >&2
+    return 1
+}
+
+@test "bash: with mise on PATH, the output of mise activate bash is evaluated (criteria 11, 23)" {
+    skip_unless_linux
+    render_home
+    require_mise_dropin
+    stub_mise
+    run_bash -ic 'printf "M=%s\n" "${WS_MISE_STUB:-}"'
+    expect_status 0
+    expect_no_err
+    expect_equal "mise activate evaluated" evaluated "$(value_of M)"
+    grep -qxF 'activate bash' "$DEST/.mise-stub.log" || {
+        printf 'mise was not called as `mise activate bash`; calls:\n%s\n' "$(cat "$DEST/.mise-stub.log" 2>/dev/null)" >&2
+        return 1
+    }
+}
+
+@test "bash: a starship from mise gives the prompt, so 70-mise.sh runs before 90-prompt.sh (criterion 11)" {
+    skip_unless_linux
+    render_home
+    require_mise_dropin
+    stub_mise
+    run_bash -ic 'printf "S=%s\n" "${WS_STARSHIP_STUB:-}"; command -v starship'
+    expect_status 0
+    expect_no_err
+    expect_equal "starship init evaluated" evaluated "$(value_of S)"
+    expect_output_matches "^$DEST/$MISE_STUB_BIN_REL/starship\$"
+}
+
+@test "bash: without mise on PATH, 70-mise.sh prints nothing and fails nothing (criteria 11, 23)" {
+    skip_unless_linux
+    render_home
+    require_mise_dropin
+    SHELL_PATH="$STUBS:$(no_mise_path)"
+    run_bash -ic 'printf "M=%s\n" "${WS_MISE_STUB:-}"'
+    expect_status 0
+    expect_no_err
+    expect_equal "stdout" "M=" "$output"
+}
+
+@test "expect.tsv: mise checks on Linux only (slice 6)" {
+    render "$PROFILES_DIR/personal-desktop.toml"
+    tsv="$DEST/$TSV_REL"
+    [ -f "$tsv" ] || { echo "no expect.tsv rendered" >&2; return 1; }
+    ids=$(cut -f 1 "$tsv" | grep -E '^(pkg-mise|apt-(keyring|sources)-mise|mise-.*)$' | LC_ALL=C sort | tr '\n' ' ' || true)
+    if ! on_linux; then
+        expect_equal "mise ids on $(uname -s)" "" "$ids"
+        return 0
+    fi
+    expect_equal "mise ids" "apt-keyring-mise apt-sources-mise mise-node mise-path-once mise-python mise-starship mise-uv mise-versions mise-ya mise-yazi pkg-mise " "$ids"
+}
+
+MISE_SMOKES="mise-node mise-python mise-uv mise-starship mise-yazi mise-ya mise-versions mise-path-once"
+
+@test "expect.tsv: the mise smokes pass on the rendered home with mise (criteria 12, 14, 15)" {
+    skip_unless_linux
+    render_home
+    stub_mise
+    for id in $MISE_SMOKES; do
+        run_smoke "$id"
+        [ "$status" -eq 0 ] || {
+            printf '%s failed (exit %s): %s\n' "$id" "$status" "$output" >&2
+            return 1
+        }
+    done
+}
+
+@test "expect.tsv: the mise smokes fail without mise (control)" {
+    skip_unless_linux
+    render_home
+    stub_mise
+    rm -f "$DEST/.local/bin/mise"
+    for id in $MISE_SMOKES; do
+        run_smoke "$id"
+        [ "$status" -ne 0 ] || { echo "$id passed without mise" >&2; return 1; }
+    done
+}
+
+@test "expect.tsv: a same-named binary outside mise's install dir fails its check (control)" {
+    skip_unless_linux
+    render_home
+    stub_mise
+    mkdir -p "$DEST/.cargo/bin" "$DEST/.config/shell/local"
+    printf '#!/bin/sh\necho yazi-from-cargo\n' >"$DEST/.cargo/bin/yazi"
+    chmod +x "$DEST/.cargo/bin/yazi"
+    printf 'PATH="$HOME/.cargo/bin:$PATH"\n' >"$DEST/.config/shell/local/50-cargo.sh"
+    run_smoke mise-yazi
+    expect_failure
+    run_smoke mise-node
+    expect_status 0
+}
+
+@test "expect.tsv: mise-versions fails for another node major or python minor (control)" {
+    skip_unless_linux
+    render_home
+    stub_mise
+    stub_tool node v24.11.0
+    run_smoke mise-versions
+    expect_failure
+    stub_tool node v26.1.0
+    stub_tool python 'Python 3.15.0'
+    run_smoke mise-versions
+    expect_failure
+}
+
+@test "expect.tsv: mise-path-once fails when activation adds PATH entries again (control)" {
+    skip_unless_linux
+    render_home
+    stub_mise naive
+    run_smoke mise-path-once
     expect_failure
 }
 

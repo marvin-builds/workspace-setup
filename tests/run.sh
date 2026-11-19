@@ -10,7 +10,8 @@
 #   system  needs Docker: builds tests/system/ and runs the real bootstrap
 #           in a fresh container per role (tests/system/run-in-container.sh
 #           has the contract). Tests the committed HEAD, since bootstrap
-#           clones the repo; commit changes first. Not part of `all`.
+#           clones the repo; commit changes first. Not part of `all`. A
+#           set MISE_GITHUB_TOKEN is passed into the containers by name.
 #
 # Exits non-zero if any test or check fails. POSIX sh; render also runs
 # under Git Bash on Windows.
@@ -171,10 +172,15 @@ mode_system() {
         say "system: docker build failed"
         status_s=1
     }
+    # A GitHub token avoids API rate limits for mise's downloads (slice 6).
+    # Passed by name only, so its value is never on a command line or in a
+    # log; docker reads it from this environment.
+    token_env=
+    [ -z "${MISE_GITHUB_TOKEN:-}" ] || token_env=MISE_GITHUB_TOKEN
     if [ $status_s -eq 0 ]; then
         for role in $SYSTEM_ROLES; do
             say "system: role $role"
-            docker run --rm \
+            docker run --rm ${token_env:+--env "$token_env"} \
                 -v "$ROOT:/src:ro" "$SYSTEM_IMAGE" \
                 sh /src/tests/system/run-in-container.sh "$role" || {
                 say "system: role $role failed"

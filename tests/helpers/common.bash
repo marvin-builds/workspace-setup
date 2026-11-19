@@ -45,10 +45,10 @@ ws_isolate() {
     ws_guard_system
 }
 
-# ws_guard_system: puts failing stubs for sudo, apt-get and apt first on
-# PATH (slice 5, decided with the test writer), so no test can reach the
-# real ones through PATH, for example through the package installer that
-# chezmoi apply runs. Each stub names itself on stderr, appends its
+# ws_guard_system: puts failing stubs for sudo, apt-get, apt and mise
+# first on PATH (slice 5 and 6, decided with the test writer), so no test
+# can reach the real ones through PATH, for example through the package or
+# tool installer that chezmoi apply runs. Each stub names itself on stderr, appends its
 # command line to $WS_GUARD_LOG and exits 1. Tests that need working stubs
 # put their own directory before this one.
 ws_guard_system() {
@@ -56,7 +56,7 @@ ws_guard_system() {
     WS_GUARD_LOG="$BATS_TEST_TMPDIR/guard.log"
     mkdir -p "$WS_GUARD_BIN"
     : >"$WS_GUARD_LOG"
-    for c in sudo apt-get apt; do
+    for c in sudo apt-get apt mise; do
         cat >"$WS_GUARD_BIN/$c" <<EOF
 #!/bin/sh
 printf '%s %s\n' '$c' "\$*" >>"$WS_GUARD_LOG"

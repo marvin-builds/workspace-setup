@@ -19,3 +19,9 @@
 {{ if ne .chezmoi.os "linux" -}}
 .chezmoiscripts/install-packages.sh
 {{ end -}}
+
+{{- /* The tool installer runs mise, which comes from apt (slice 6); the
+       lockfile pins Linux platforms only. */ -}}
+{{ if ne .chezmoi.os "linux" -}}
+.chezmoiscripts/install-tools.sh
+{{ end -}}

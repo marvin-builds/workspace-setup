@@ -232,3 +232,50 @@ job_block() {
         fi
     done
 }
+
+# ---------------------------------------------- mise (slice 6, 17, 22)
+
+# job_names: the top-level job ids, one per line.
+job_names() {
+    awk '
+        /^jobs:/ { injobs = 1; next }
+        injobs && /^[^ #]/ { injobs = 0 }
+        injobs && /^[ ]{2}[a-z][a-z0-9_-]*:[ ]*$/ { j = $1; sub(/:$/, "", j); print j }
+    ' "$CI"
+}
+
+@test "ci.yml: a job validates renovate.json with a pinned renovate-config-validator on mise's node (criterion 17)" {
+    found=
+    for j in $(job_names); do
+        block=$(job_block "$j")
+        printf '%s\n' "$block" | grep -qF 'renovate-config-validator' || continue
+        found=$j
+        break
+    done
+    [ -n "$found" ] || { echo "no job runs renovate-config-validator" >&2; return 1; }
+    # Pinned exactly, as an npm package spec (decided with the test writer).
+    printf '%s\n' "$block" | grep -qE 'renovate@[0-9]+\.[0-9]+\.[0-9]+([^0-9.]|$)' || {
+        printf 'job %s does not pin renovate to an exact version:\n%s\n' "$found" "$block" >&2
+        return 1
+    }
+    printf '%s\n' "$block" | grep -qF 'renovate.json' || {
+        echo "job $found does not name renovate.json" >&2
+        return 1
+    }
+    printf '%s\n' "$block" | grep -qF 'mise' || {
+        echo "job $found does not take node from mise" >&2
+        return 1
+    }
+    # No if:, so a broken config fails every run, the weekly one included.
+    bad=$(printf '%s\n' "$block" | grep -E '^[ ]+(- )?if:' || true)
+    expect_equal "if: lines in job $found" "" "$bad"
+}
+
+@test "ci.yml: the system job passes the GitHub token as MISE_GITHUB_TOKEN through env: (criterion 22)" {
+    block=$(job_block system)
+    [ -n "$block" ] || { echo "ci.yml has no system job" >&2; return 1; }
+    printf '%s\n' "$block" | grep -qE '^[ ]+MISE_GITHUB_TOKEN:[ ]*\$\{\{[ ]*(secrets\.GITHUB_TOKEN|github\.token)[ ]*\}\}[ ]*$' || {
+        printf 'system job has no env MISE_GITHUB_TOKEN from the GitHub token:\n%s\n' "$block" >&2
+        return 1
+    }
+}

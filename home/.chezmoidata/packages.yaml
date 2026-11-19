@@ -59,6 +59,23 @@ packages:
     scoop: file
     # macOS ships /usr/bin/file; Homebrew's file-formula is keg-only.
     brew: null
+  # Unpinned (slice 6): updates with `sudo apt upgrade` like every apt
+  # package. What it installs is pinned in ~/.config/mise/mise.lock.
+  mise:
+    apt: mise
+    flatpak: null
+    winget: jdx.mise
+    scoop: mise
+    brew: mise
+    apt_repo: mise
+  # mise's node (official Linux builds) needs libatomic.so.1, which a
+  # minimal Ubuntu lacks.
+  libatomic1:
+    apt: libatomic1
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
 
 apt_repos:
   # GitHub CLI's docs/install_linux.md, which lists both primary keys of
@@ -86,3 +103,16 @@ apt_repos:
     uris: [https://repo.charm.sh/apt/]
     suites: ["*"]
     components: ["*"]
+  # mise's install docs (Ubuntu/Debian): the repo's Release lists amd64
+  # and arm64. The fingerprint is the release key the docs publish;
+  # `gpg --show-keys` on the served key shows it as the only primary key.
+  mise:
+    key:
+      url: https://mise.jdx.dev/gpg-key.pub
+      # Unpublished: the sha256 of the file as mise.jdx.dev served it.
+      sha256: 91c72340c5cc84ae2ba98c1070083feacf789b0a4a3d34b2416147769e475d96
+      fingerprints: [24853EC9F655CE80B48E6C3A8B81C9D17413A06D]
+    uris: [https://mise.jdx.dev/deb]
+    suites: [stable]
+    components: [main]
+    architectures: [amd64, arm64]

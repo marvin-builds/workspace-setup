@@ -141,10 +141,10 @@ run_line() {
     }
     check
     expect_status 0
-    for id in git gh ripgrep fzf glow file; do
+    for id in git gh ripgrep fzf glow file mise libatomic1; do
         grep -qxF "package${TAB}$id" "$IN" || { echo "no package line for $id" >&2; return 1; }
     done
-    for r in github-cli charm; do
+    for r in github-cli charm mise; do
         grep -qE "^repo${TAB}$r${TAB}" "$IN" || { echo "no repo line for $r" >&2; return 1; }
     done
 }

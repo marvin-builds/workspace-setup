@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Bump PRs for the tools in home/dot_config/mise/config.toml together with mise.lock (slice 6). apt key pins and externals are not covered here.",
+  "enabledManagers": ["mise"],
+  "dependencyDashboard": true,
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "python: patches get their own PR. Otherwise Renovate groups them with the minor and proposes only the highest version, a gated minor, so a patch never arrives.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["python"],
+      "separateMinorPatch": true
+    },
+    {
+      "description": "node: a new major only on approval through the Dependency Dashboard.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "python: a minor breaks compiled packages like a major, so both only on approval.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["python"],
+      "matchUpdateTypes": ["minor", "major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

@@ -189,11 +189,11 @@ repo() {
     tmpl "{{ \$r := index (include \"$PACKAGES\" | fromYaml).apt_repos \"$1\" }}{{ \$r.key.url }}|{{ join \" \" (sortAlpha \$r.key.fingerprints) }}|{{ join \" \" \$r.uris }}|{{ join \" \" \$r.suites }}|{{ join \" \" \$r.components }}|{{ \$r.key.sha256 }}"
 }
 
-@test "packages.yaml: apt_repos holds github-cli and charm" {
+@test "packages.yaml: apt_repos holds github-cli, charm and mise (slice 6)" {
     require_packages
     run tmpl "{{ range \$k, \$_ := (include \"$PACKAGES\" | fromYaml).apt_repos }}{{ \$k }} {{ end }}"
     expect_status 0
-    expect_equal "apt_repos names" "charm github-cli " "$output"
+    expect_equal "apt_repos names" "charm github-cli mise " "$output"
 }
 
 @test "packages.yaml: github-cli repo as in GitHub CLI's install_linux.md (criterion 3)" {
@@ -211,4 +211,39 @@ repo() {
     expect_status 0
     # Charm publishes no fingerprint; decision 33 records how it was read.
     expect_output_matches '^https://repo\.charm\.sh/apt/gpg\.key\|ED927B38BE981E53CA09153D03BBF595D4DFD35C\|https://repo\.charm\.sh/apt/\|\*\|\*\|[0-9a-f]{64}$'
+}
+
+# ------------------------------------------------ mise (slice 6, criterion 1)
+
+@test "packages.yaml: mise from its apt repo, flatpak null, other ids confirmed or null (slice 6)" {
+    require_packages
+    run entry mise
+    expect_status 0
+    expect_equal "packages.mise (apt|flatpak|apt_repo|roles|forms|all columns)" '"mise"|null|mise|false|false|true' "$output"
+    run tmpl "{{ \$p := (include \"$PACKAGES\" | fromYaml).packages.mise }}{{ toJson \$p.winget }}|{{ toJson \$p.scoop }}|{{ toJson \$p.brew }}"
+    expect_status 0
+    expect_output_matches '^("jdx\.mise"|null)\|("mise"|null)\|("mise"|null)$'
+}
+
+@test "packages.yaml: libatomic1 for mise's node, apt only, no filters (slice 6, orchestrator decision)" {
+    require_packages
+    # node's official Linux builds need libatomic.so.1, which a minimal
+    # ubuntu:24.04 lacks.
+    run entry libatomic1
+    expect_status 0
+    expect_equal "packages.libatomic1 (apt|flatpak|apt_repo|roles|forms|all columns)" '"libatomic1"|null|-|false|false|true' "$output"
+    run tmpl "{{ \$p := (include \"$PACKAGES\" | fromYaml).packages.libatomic1 }}{{ toJson \$p.winget }}|{{ toJson \$p.scoop }}|{{ toJson \$p.brew }}"
+    expect_status 0
+    expect_equal "libatomic1 winget|scoop|brew" 'null|null|null' "$output"
+}
+
+@test "packages.yaml: mise repo as in mise's install docs (slice 6, criterion 1)" {
+    require_packages
+    run repo mise
+    expect_status 0
+    # The release key mise's install docs publish (brief, criterion 1).
+    expect_output_matches '^https://mise\.jdx\.dev/gpg-key\.pub\|24853EC9F655CE80B48E6C3A8B81C9D17413A06D\|https://mise\.jdx\.dev/deb\|stable\|main\|[0-9a-f]{64}$'
+    run tmpl "{{ join \" \" (index (include \"$PACKAGES\" | fromYaml).apt_repos \"mise\").architectures }}"
+    expect_status 0
+    expect_equal "mise architectures" "amd64 arm64" "$output"
 }
