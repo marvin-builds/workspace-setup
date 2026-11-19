@@ -53,6 +53,45 @@ checksum_source = "mise-versions"
 url = "https://github.com/sxyazi/yazi/releases/download/v26.9.1/yazi-x86_64-unknown-linux-gnu.zip"
 url_api = "https://api.github.com/repos/sxyazi/yazi/releases/assets/539261400"
 
+[[tools."github:JetBrains/JetBrainsMono"]]
+version = "2.304"
+backend = "github:JetBrains/JetBrainsMono"
+specifiers = ["2.304"]
+
+[tools."github:JetBrains/JetBrainsMono".options]
+version_prefix = "v"
+
+[tools."github:JetBrains/JetBrainsMono"."platforms.linux-arm64"]
+checksum = "sha256:6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf"
+url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip"
+url_api = "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/assets/91681614"
+
+[tools."github:JetBrains/JetBrainsMono"."platforms.linux-x64"]
+checksum = "sha256:6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf"
+url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip"
+url_api = "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/assets/91681614"
+
+[[tools."github:ryanoasis/nerd-fonts"]]
+version = "3.5.1"
+backend = "github:ryanoasis/nerd-fonts"
+specifiers = ["3.5.1"]
+
+[tools."github:ryanoasis/nerd-fonts".options]
+asset_pattern = "NerdFontsSymbolsOnly.tar.xz"
+version_prefix = "v"
+
+[tools."github:ryanoasis/nerd-fonts"."platforms.linux-arm64"]
+checksum = "sha256:01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996"
+checksum_source = "mise-versions"
+url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz"
+url_api = "https://api.github.com/repos/ryanoasis/nerd-fonts/releases/assets/523461571"
+
+[tools."github:ryanoasis/nerd-fonts"."platforms.linux-x64"]
+checksum = "sha256:01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996"
+checksum_source = "mise-versions"
+url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz"
+url_api = "https://api.github.com/repos/ryanoasis/nerd-fonts/releases/assets/523461571"
+
 [[tools.node]]
 version = "26.13.1"
 backend = "core:node"

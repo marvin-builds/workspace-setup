@@ -25,3 +25,19 @@
 {{ if ne .chezmoi.os "linux" -}}
 .chezmoiscripts/install-tools.sh
 {{ end -}}
+
+{{- /* The font linker (slice 7): a Linux desktop only. Other forms get
+       the fonts from mise too, but nothing there shows them. */ -}}
+{{ if or (ne .chezmoi.os "linux") (ne .form "desktop") -}}
+.chezmoiscripts/link-fonts.sh
+{{ end -}}
+
+{{- /* Externals (slice 7): yazi's plugins are Linux only, like yazi's
+       install. chezmoi downloads an external whenever it reads the source
+       state, even with --exclude externals; only an ignored target is
+       skipped. So applying into another directory than the home (tests,
+       previews) leaves them out, like the scripts' destination guard. */ -}}
+{{ if or (ne .chezmoi.os "linux") (ne .chezmoi.destDir .chezmoi.homeDir) -}}
+.config/yazi/plugins/piper.yazi
+.config/yazi/plugins/piper.yazi/**
+{{ end -}}

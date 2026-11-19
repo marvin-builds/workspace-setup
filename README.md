@@ -144,6 +144,42 @@ The Renovate GitHub app is not set up by this repo: install it by hand
 for this repository on GitHub. CI validates `renovate.json` with a pinned
 `renovate-config-validator` on a node 24 from mise (job `renovate`).
 
+### Fonts and plugins
+
+- **Fonts.** JetBrains Mono and the Nerd Font Symbols are mise tools too
+  (`github:` backend, the release asset as published; for nerd-fonts only
+  `NerdFontsSymbolsOnly.tar.xz`). `mise.lock` pins their URL and checksum
+  like any tool, and mise installs them on every Linux machine. On a
+  desktop, `chezmoi apply` then links their `.ttf` and `.otf` files into
+  `$XDG_DATA_HOME/fonts/ws` (`~/.local/share/fonts/ws` when
+  `XDG_DATA_HOME` is unset) and runs `fc-cache` on it. The linker runs
+  again whenever the mise config or lockfile changes, and then deletes
+  and rebuilds that folder, so a bump leaves no old links. Nothing else
+  under the fonts folder is touched. To relink without a change (say,
+  after deleting the folder), clear chezmoi's record of run scripts with
+  `chezmoi state delete-bucket --bucket=entryState` and run
+  `chezmoi apply`; that reruns every `run_onchange_` script.
+- **yazi plugins.** [`home/.chezmoiexternal.toml`](home/.chezmoiexternal.toml)
+  makes chezmoi download the
+  [yazi-rs/plugins](https://github.com/yazi-rs/plugins) archive of one
+  commit and extract only `piper.yazi` to `~/.config/yazi/plugins/`. The
+  full commit in the URL is the pin: the archive can't change under it, so
+  there is no separate checksum and no refresh period. Linux only, and
+  never when applying into another folder than the home (tests).
+
+Renovate bumps both: a font like any mise tool (`config.toml` and
+`mise.lock` in one PR), the plugin when `main` of yazi-rs/plugins moves on
+(a PR that changes the commit in the URL). It also bumps the commit-pinned
+GitHub Actions in `.github/workflows/` (with their `# vX.Y.Z` comments)
+and the validator's `renovate` and `node` versions in `ci.yml`, that
+`node` within major 24.
+
+Bump by hand: a font as above (`mise lock github:JetBrains/JetBrainsMono`
+after changing its version); the plugin by replacing the commit in the
+URL with the newest one on `main`
+(`gh api repos/yazi-rs/plugins/commits/main --jq .sha`), then
+`chezmoi apply`.
+
 ## Setup after cloning
 
 When you clone by hand instead of with the bootstrap, enable the privacy

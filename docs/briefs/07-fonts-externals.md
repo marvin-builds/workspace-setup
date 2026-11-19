@@ -197,3 +197,68 @@ unit, render, system, run.sh if render needs the externals exclusion),
     prove it, and seed chezmoi's cache with a fixture archive to test the
     extraction; those depend on chezmoi's cache layout
     (`<cache>/external/<sha256 of the URL>`).
+
+### Implementation round 1
+
+31. **Check first (criterion 1) passed,** in an ubuntu:24.04 container
+    with mise 2026.11.10 from its apt repo: `mise install --locked`
+    installs both fonts (no executable in the asset is fine; 34 `.ttf`
+    for JetBrains Mono, 2 for the symbols), a rerun installs nothing, and
+    `mise lock --global` records both for linux-x64 and linux-arm64 with
+    checksum and url. The nerd-fonts checksum equals the digest GitHub
+    publishes for the asset; JetBrains Mono's 2023 asset has none, so its
+    checksum is mise's hash of the download. Renovate 44.216.2's mise
+    manager maps `github:` to the github-releases datasource and, after a
+    bump, runs `mise lock <config key>` with `MISE_SAFE=1`; run by hand
+    that way in a copy of `home/dot_config/mise`, it produced the same
+    lock entries as `mise lock --global`.
+32. **`version_prefix = "v"` on both fonts:** their release tags are
+    `v2.304` and `v3.5.1`. Without the option, a Renovate dry run with
+    older pins proposed `v2.304`, which would turn the exact pin into a
+    tag and fail the version unit test in the bump PR; with it, Renovate
+    proposes `2.304` and `3.5.1` (its mise manager turns the option into
+    `extractVersion`). mise accepts it and records it in the lock's
+    `options`, as it does `asset_pattern`. So JetBrains Mono is a table
+    too, without an `asset_pattern` (its release has one asset).
+33. **Font links per font, mirroring the install dir:**
+    `fonts/ws/JetBrains-JetBrainsMono/fonts/ttf/…` and
+    `fonts/ws/ryanoasis-nerd-fonts/…`. Flat links named after the file
+    would silently drop one of two files with the same name; fontconfig
+    scans subdirs. The dir is removed and rebuilt each run, after every
+    `mise where` succeeded, so a missing font leaves the old links in
+    place and fails.
+34. **Externals file is plain `.chezmoiexternal.toml`;** OS and
+    destination filtering live in `.chezmoiignore` (target and `/**`).
+    `exact = true`, so files a newer plugin commit drops are removed.
+35. **Renovate:** regex managers with `managerFilePatterns` regexes
+    anchored to the repo root; the CI ones match `--package renovate@` and
+    `mise exec node@`, so prose in comments can't match. The node rule
+    combines `matchManagers: ["custom.regex"]` and `matchFileNames`
+    (`ci.yml`) with `allowedVersions: "<25"`. `renovate-config-validator
+    --strict` (44.216.2, node 24) accepts the config. A lookup dry run
+    (`--platform=local`) with an older plugin commit proposed the current
+    `main` digest, proposed a renovate minor, nothing for node 24.22.3
+    (newest 24.x), and a patch for `jdx/mise-action`.
+36. **Desktop linking with the real tools:** the rendered linker, run in
+    an ubuntu:24.04 container with mise's real font installs and
+    fontconfig, made 36 links (none dangling), both desktop `expect.yaml`
+    smokes passed (`fc-list` lists JetBrains Mono and Symbols Nerd Font
+    from the owned dir), a rerun left the same tree, and a file next to
+    the owned dir stayed.
+
+### Review round 1
+
+37. **No hidden failures in the linker:** it now lists every font's files
+    (`find` in the install dir, its status checked) before it removes
+    the owned dir. A failing search, e.g. on an unreadable subdir, or an
+    install dir without any `.ttf`/`.otf`, exits non-zero naming the
+    font and leaves the old links in place. The links are then made in
+    a loop over a here document, not a pipeline, so a failing `mkdir` or
+    `ln` stops the script.
+38. **README:** the linker is a `run_onchange_` script, so it reruns
+    (and rebuilds the folder) only when the mise config or lockfile
+    changes; a forced rerun is `chezmoi state delete-bucket
+    --bucket=entryState` and `chezmoi apply`, as the system test does.
+    The folder is `$XDG_DATA_HOME/fonts/ws`, `~/.local/share/fonts/ws`
+    when it is unset; the desktop smokes in `expect.yaml` follow the same
+    rule.
