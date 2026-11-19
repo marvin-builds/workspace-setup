@@ -1,0 +1,30 @@
+# mise's global config (slice 6, docs/briefs/06-mise.md): runtimes and
+# tools that apt lacks or whose version matters. mise.lock next to it pins
+# the exact version and checksum per platform; chezmoi apply installs
+# exactly that with `mise install --locked`. A project picks its own
+# versions with a mise.toml of its own.
+#
+# Bump by hand: change a version here, then run `mise lock <tool>` in this
+# directory of the repo, which rewrites mise.lock for both Linux platforms.
+# Name the tool as its key below (`mise lock aqua:starship/starship`). The
+# repo's copy is a project config to mise: run `mise trust` here once,
+# else `mise lock` stops with "not trusted".
+# Renovate opens these bumps as PRs (renovate.json).
+
+[settings]
+lockfile = true
+
+[tools]
+# Exact versions, also for node and python: with a partial version such as
+# "26" Renovate only refreshes the lockfile within it and never shows the
+# next major. Renovate opens a PR for a new minor or patch.
+# node: the Active LTS line (26); a new major only on approval through
+# the Dependency Dashboard.
+node = "26.13.1"
+# python: one minor behind the newest. A python minor breaks compiled
+# packages like a major, so minors and majors only on approval too.
+python = "3.14.10"
+"aqua:astral-sh/uv" = "0.13.9"
+"aqua:starship/starship" = "1.27.0"
+# Provides yazi and ya.
+"aqua:sxyazi/yazi" = "26.9.1"

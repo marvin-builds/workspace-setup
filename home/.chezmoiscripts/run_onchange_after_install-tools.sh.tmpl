@@ -1,0 +1,32 @@
+{{- /* Installs the tools of ~/.config/mise/config.toml at the versions
+       and checksums of mise.lock (slice 6). The hashes below make chezmoi
+       rerun it whenever the config or the lockfile changes. */ -}}
+{{- $dir := joinPath .chezmoi.sourceDir "dot_config" "mise" -}}
+#!/bin/sh
+# Installs the runtimes and tools of ~/.config/mise/config.toml exactly as
+# ~/.config/mise/mise.lock pins them. chezmoi reruns this whenever the
+# config or the lockfile changes; an after_ script, so both are written
+# first, and mise itself comes from the before_ package installer.
+# config.toml sha256: {{ include (joinPath $dir "config.toml") | sha256sum }}
+# mise.lock sha256: {{ include (joinPath $dir "mise.lock") | sha256sum }}
+# Linux only (.chezmoiignore).
+set -eu
+# Applying into another directory than the home (tests, previews) installs
+# nothing.
+if [ "${CHEZMOI_DEST_DIR:-}" != "${CHEZMOI_HOME_DIR:-}" ]; then
+    printf 'install-tools: skipped, the destination %s is not the home %s\n' \
+        "${CHEZMOI_DEST_DIR:-}" "${CHEZMOI_HOME_DIR:-}"
+    exit 0
+fi
+command -v mise >/dev/null 2>&1 || {
+    echo 'install-tools: mise not found; the package installer installs it from its apt repo' >&2
+    exit 1
+}
+# --locked: only the lockfile's URLs and checksums; a missing entry, a
+# checksum mismatch or a failed download fails with mise's error. Versions
+# already installed are skipped.
+mise install --locked || {
+    status=$?
+    echo "install-tools: mise install --locked failed (exit $status), see above" >&2
+    exit "$status"
+}

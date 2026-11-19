@@ -93,7 +93,30 @@ jobs:
         with:
           persist-credentials: false
       - name: Bootstrap, ws doctor and idempotency per role
+        # mise downloads from GitHub; the token avoids API rate limits.
+        # tests/run.sh passes it into the containers by name only.
+        env:
+          MISE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tests/run.sh system
+
+  # renovate.json is valid for the pinned Renovate (slice 6), checked as a
+  # repo config. Renovate 44.216.2 requires node ^24.11, so mise provides
+  # an exact node 24 here, not the node 26 of the global config. No if:,
+  # so the weekly schedule catches a config Renovate stops accepting.
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          install: false
+          cache: false
+      - name: renovate-config-validator
+        run: >-
+          mise exec node@24.22.3 -- npx --yes --package renovate@44.216.2 --
+          renovate-config-validator --strict --no-global renovate.json
 
   # Every apt id in home/.chezmoidata/packages.yaml, unfiltered, has an
   # install candidate on ubuntu:24.04 with the apt repos added as the
