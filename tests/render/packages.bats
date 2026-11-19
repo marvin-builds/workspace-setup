@@ -186,7 +186,7 @@ for profile in "$PROFILES_DIR"/*.toml; do
     bats_test_function --description "packages $p: exactly the filtered ids and needed repos reach install-apt.sh (fixture)" -- t_filtered "$profile"
 done
 
-@test "packages: the real data passes git, gh, ripgrep, fzf, glow, file and both repos" {
+@test "packages: the real data passes git, gh, ripgrep, fzf, glow, file, mise, libatomic1 and their repos" {
     skip_unless_linux
     require_template
     [ -f "$REPO_ROOT/home/.chezmoidata/packages.yaml" ] || {
@@ -202,8 +202,10 @@ package${TAB}fzf
 package${TAB}gh
 package${TAB}git
 package${TAB}glow
+package${TAB}libatomic1
+package${TAB}mise
 package${TAB}ripgrep" "$(sorted_data | grep '^package')"
-    expect_equal "repos" "charm github-cli" "$(sorted_data | awk -F '\t' '$1 == "repo" { print $2 }' | tr '\n' ' ' | sed 's/ $//')"
+    expect_equal "repos" "charm github-cli mise" "$(sorted_data | awk -F '\t' '$1 == "repo" { print $2 }' | tr '\n' ' ' | sed 's/ $//')"
 }
 
 # --------------------------------------------- rerun on change (7)
@@ -267,8 +269,9 @@ apply_to_dest() {
     apply_to_dest "$src" "$PROFILES_DIR/personal-desktop.toml"
     expect_status 0
     [ ! -e "$REC/args" ] || { echo "install-apt.sh ran for a destination other than home" >&2; return 1; }
-    n=$(printf '%s\n' "$output" | grep -ci 'skip' || true)
-    expect_equal "skip lines in the apply output" 1 "$n"
+    # Other installers skip too (slice 6: install-tools); count this one's.
+    n=$(printf '%s\n' "$output" | grep -i 'skip' | grep -ci 'packages' || true)
+    expect_equal "packages skip lines in the apply output" 1 "$n"
     expect_guard_untouched
 }
 

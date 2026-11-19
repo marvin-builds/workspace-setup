@@ -148,15 +148,64 @@ entry_json() {
     expect_equal expect-tsv '{"file":"~/.config/ws/expect.tsv","id":"expect-tsv"}' "$(entry_json expect-tsv)"
 }
 
-@test "expect.yaml: package and apt repo checks, Linux only (slice 5, criteria 14, 15)" {
-    for pair in git:git gh:gh ripgrep:rg fzf:fzf glow:glow file:file; do
+@test "expect.yaml: package and apt repo checks, Linux only (slice 5, criteria 14, 15; slice 6, criterion 3)" {
+    for pair in git:git gh:gh ripgrep:rg fzf:fzf glow:glow file:file mise:mise; do
         n=${pair%%:*}
         c=${pair#*:}
         expect_equal "pkg-$n" "{\"command\":\"$c\",\"id\":\"pkg-$n\",\"os\":[\"linux\"],\"smoke\":\"$c --version\",\"source\":\"/usr/bin/$c\"}" "$(entry_json "pkg-$n")"
     done
-    for r in github-cli charm; do
+    for r in github-cli charm mise; do
         expect_equal "apt-keyring-$r" "{\"file\":\"/etc/apt/keyrings/ws-$r.gpg\",\"id\":\"apt-keyring-$r\",\"os\":[\"linux\"]}" "$(entry_json "apt-keyring-$r")"
         expect_equal "apt-sources-$r" "{\"file\":\"/etc/apt/sources.list.d/ws-$r.sources\",\"id\":\"apt-sources-$r\",\"os\":[\"linux\"]}" "$(entry_json "apt-sources-$r")"
+    done
+}
+
+# smoke_field <id>: the smoke of the entry with that id, empty if none.
+smoke_field() {
+    "$CHEZMOI" --no-tty --source "$EMPTY_SRC" --config "$TEST_TMP/none.toml" \
+        --cache "$TEST_TMP/chezmoi-cache" \
+        --persistent-state "$TEST_TMP/chezmoistate.boltdb" \
+        execute-template "{{ range (include \"$EXPECT\" | fromYaml).checks }}{{ if eq (toString .id) \"$1\" }}{{ .smoke }}{{ end }}{{ end }}"
+}
+
+# Slice 6, criteria 12, 14 and 15. How the smokes behave is tested against
+# a rendered home with a stub mise in tests/render/shell.bats.
+@test "expect.yaml: mise tool checks run in a clean interactive bash and require mise's install dir (slice 6, criterion 14)" {
+    for t in node python uv starship yazi ya; do
+        id="mise-$t"
+        json=$(entry_json "$id")
+        case $json in
+            *'"command":"bash"'*'"os":["linux"]'*) ;;
+            *) echo "$id is missing or not a Linux-only command: bash check: $json" >&2; return 1 ;;
+        esac
+        s=$(smoke_field "$id")
+        case $s in
+            'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic '*) ;;
+            *) echo "$id does not start a clean interactive bash: $s" >&2; return 1 ;;
+        esac
+        for want in '"$HOME"/.local/share/mise/installs/' "command -v $t)" "$t --version"; do
+            printf '%s\n' "$s" | grep -qF -- "$want" || {
+                echo "$id lacks [$want]: $s" >&2
+                return 1
+            }
+        done
+    done
+}
+
+@test "expect.yaml: mise-versions and mise-path-once checks (slice 6, criteria 12, 15)" {
+    for id in mise-versions mise-path-once; do
+        json=$(entry_json "$id")
+        case $json in
+            *'"command":"bash"'*'"os":["linux"]'*) ;;
+            *) echo "$id is missing or not a Linux-only command: bash check: $json" >&2; return 1 ;;
+        esac
+    done
+    s=$(smoke_field mise-versions)
+    for want in 'node --version' 'python --version'; do
+        printf '%s\n' "$s" | grep -qF -- "$want" || {
+            echo "mise-versions lacks [$want]: $s" >&2
+            return 1
+        }
     done
 }
 

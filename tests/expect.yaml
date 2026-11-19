@@ -127,6 +127,13 @@ checks:
     source: /usr/bin/file
     smoke: file --version
 
+  # mise from its apt repo (slice 6), unpinned: it updates with apt.
+  - id: pkg-mise
+    os: [linux]
+    command: mise
+    source: /usr/bin/mise
+    smoke: mise --version
+
   # Third-party apt repos: keyring and deb822 sources, ws-<repo name>.
   - id: apt-keyring-github-cli
     os: [linux]
@@ -143,3 +150,61 @@ checks:
   - id: apt-sources-charm
     os: [linux]
     file: /etc/apt/sources.list.d/ws-charm.sources
+
+  - id: apt-keyring-mise
+    os: [linux]
+    file: /etc/apt/keyrings/ws-mise.gpg
+
+  - id: apt-sources-mise
+    os: [linux]
+    file: /etc/apt/sources.list.d/ws-mise.sources
+
+  # Runtimes and tools from mise (slice 6). Each resolves, in a new
+  # interactive bash with a clean environment (like shell-path), to a
+  # binary under mise's install dir and runs; a same-named binary elsewhere
+  # on PATH (e.g. a cargo yazi in ~/.cargo/bin) fails the check. Shims
+  # don't count: they are out of scope.
+  - id: mise-node
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v node)" in "$HOME"/.local/share/mise/installs/*) node --version ;; *) exit 1 ;; esac'''
+
+  - id: mise-python
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v python)" in "$HOME"/.local/share/mise/installs/*) python --version ;; *) exit 1 ;; esac'''
+
+  - id: mise-uv
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v uv)" in "$HOME"/.local/share/mise/installs/*) uv --version ;; *) exit 1 ;; esac'''
+
+  - id: mise-starship
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v starship)" in "$HOME"/.local/share/mise/installs/*) starship --version ;; *) exit 1 ;; esac'''
+
+  - id: mise-yazi
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v yazi)" in "$HOME"/.local/share/mise/installs/*) yazi --version ;; *) exit 1 ;; esac'''
+
+  - id: mise-ya
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(command -v ya)" in "$HOME"/.local/share/mise/installs/*) ya --version ;; *) exit 1 ;; esac'''
+
+  # The node major and python minor of home/dot_config/mise/config.toml
+  # (tests/unit/mise-data.bats keeps these in step with the config), so a
+  # stale or hand-installed version fails.
+  - id: mise-versions
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''case "$(node --version)" in v26.*) ;; *) exit 1 ;; esac; case "$(python --version 2>&1)" in "Python 3.14."*) ;; *) exit 1 ;; esac'''
+
+  # mise's install dirs are in PATH, each once, in a new interactive bash,
+  # after re-sourcing the bashrc and in a nested bash (as shell-path).
+  - id: mise-path-once
+    os: [linux]
+    command: bash
+    smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''ws_mise_once() { p=$(printf "%s\n" "$PATH" | tr : "\n" | grep -F "$HOME/.local/share/mise/installs/"); [ -n "$p" ] && [ -z "$(printf "%s\n" "$p" | sort | uniq -d)" ]; }; ws_mise_once && . ~/.bashrc && ws_mise_once && export -f ws_mise_once && bash -ic ws_mise_once'''

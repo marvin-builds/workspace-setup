@@ -26,6 +26,12 @@
 # step 2 reruns the installer and requires /etc/apt/sources.list.d and
 # /etc/apt/keyrings to stay byte for byte unchanged.
 #
+# Tools from mise (slice 6, criterion 22): ws doctor checks them; the
+# rerun in idempotency step 2 must leave every installed version dir under
+# ~/.local/share/mise/installs as it was (nothing downloaded again). A
+# MISE_GITHUB_TOKEN passed in (CI) avoids GitHub rate limits; it must not
+# end up in any file under the home, and this script never prints it.
+#
 # Fake data only: owners octo-one and octo-two, name Test User.
 
 set -eu
@@ -84,9 +90,13 @@ snapshot() {
     git -C "$CLONE" log --all --oneline | wc -l
     git -C "$CLONE" status --porcelain --ignored
     cat "$CLONE/.git/config"
+    # mise's installs are compared by mise_installs (thousands of files);
+    # its download cache is not machine state.
     (cd "$HOME" && find . -type f ! -name 'chezmoistate.boltdb' \
-        ! -path './dev/workspace-setup/.git/*' | LC_ALL=C sort |
-        while IFS= read -r f; do cksum "$f"; done)
+        ! -path './dev/workspace-setup/.git/*' \
+        ! -path './.local/share/mise/installs/*' ! -path './.cache/mise/*' |
+        LC_ALL=C sort | while IFS= read -r f; do cksum "$f"; done)
+    mise_installs
 }
 
 # config_files: checksums of every file under ~/.config and ~/.local/bin
@@ -112,6 +122,16 @@ apt_files() {
             cksum <"$f"
         done
     done
+}
+
+# mise_installs: inode, mtime and path of every installed version dir
+# (slice 6, criterion 10). A reinstall replaces the dir, so either
+# changes; the per-tool symlinks mise rebuilds are left out.
+mise_installs() {
+    d="$HOME/.local/share/mise/installs"
+    [ -d "$d" ] || return 0
+    find "$d" -mindepth 2 -maxdepth 2 -type d | LC_ALL=C sort |
+        while IFS= read -r f; do stat -c '%i %Y %n' "$f"; done
 }
 
 script_state() {
@@ -175,6 +195,8 @@ step "idempotency 2: clear script state, apply, doctor, verify"
 config_before=$(config_files)
 apt_before=$(apt_files)
 [ -n "$apt_before" ] || fail "no files under /etc/apt/sources.list.d or /etc/apt/keyrings after the bootstrap"
+mise_before=$(mise_installs)
+[ -n "$mise_before" ] || fail "nothing under ~/.local/share/mise/installs after the bootstrap"
 chezmoi state delete-bucket --bucket=scriptState || fail "delete-bucket scriptState"
 chezmoi state delete-bucket --bucket=entryState || fail "delete-bucket entryState"
 [ -z "$(script_state | tr -d '{}[:space:]')" ] || fail "scriptState still holds entries"
@@ -186,6 +208,8 @@ chezmoi verify || fail "chezmoi verify after re-running the scripts"
     fail "re-running the scripts changed files under ~/.config or ~/.local/bin"
 [ "$apt_before" = "$(apt_files)" ] ||
     fail "re-running the package installer changed /etc/apt/sources.list.d or /etc/apt/keyrings"
+[ "$mise_before" = "$(mise_installs)" ] ||
+    fail "re-running the tool installer changed ~/.local/share/mise/installs"
 
 step "bootstrap again changes nothing"
 before=$(snapshot)
@@ -200,5 +224,13 @@ after=$(snapshot)
 d=$(chezmoi diff) || fail "chezmoi diff"
 [ -z "$d" ] || fail "chezmoi diff not empty after the second bootstrap: $d"
 ws doctor || fail "ws doctor after the second bootstrap"
+
+if [ -n "${MISE_GITHUB_TOKEN:-}" ]; then
+    step "GitHub token not stored"
+    # -q: a match is never printed.
+    if grep -rqsF -- "$MISE_GITHUB_TOKEN" "$HOME"; then
+        fail "the GitHub token was written to a file under the home"
+    fi
+fi
 
 printf '\nsystem test (%s): passed\n' "$role"

@@ -40,11 +40,16 @@ setup() {
     DOCKER_CTX_LOG="$TEST_TMP/docker-ctx.log"
     : >"$DOCKER_CTX_LOG"
     export DOCKER_CTX_LOG
-    unset DOCKER_RUN_KILL STUB_CONTEXT DOCKER_CONTEXT
+    unset DOCKER_RUN_KILL STUB_CONTEXT DOCKER_CONTEXT MISE_GITHUB_TOKEN
+    # Which calls saw MISE_GITHUB_TOKEN in their environment (slice 6).
+    DOCKER_TOKEN_LOG="$TEST_TMP/docker-token.log"
+    : >"$DOCKER_TOKEN_LOG"
+    export DOCKER_TOKEN_LOG
     cat >"$STUBS/docker" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$DOCKER_LOG"
 printf '%s %s\n' "${1:-}" "${DOCKER_CONTEXT:-}" >>"$DOCKER_CTX_LOG"
+[ -z "${MISE_GITHUB_TOKEN:-}" ] || printf '%s\n' "${1:-}" >>"$DOCKER_TOKEN_LOG"
 case ${1:-} in
     context)
         [ "${2:-}" != show ] || printf '%s\n' "${DOCKER_CONTEXT:-${STUB_CONTEXT:-default}}"
@@ -268,6 +273,44 @@ expect_tmp_clean() {
         printf 'no docker build or run seen; log:\n%s\n' "$(cat "$DOCKER_CTX_LOG")" >&2
         return 1
     }
+}
+
+# ------------------------------------------ mise (slice 6, criterion 22)
+
+@test "run.sh: system passes MISE_GITHUB_TOKEN into each container by name, never its value" {
+    MISE_GITHUB_TOKEN=fake-token-for-tests-0000
+    export MISE_GITHUB_TOKEN
+    run env PATH="$STUBS:$SYSBIN" "$RUN" system
+    expect_status 0
+    expect_output_lacks "$MISE_GITHUB_TOKEN"
+    ! grep -qF "$MISE_GITHUB_TOKEN" "$DOCKER_LOG" || {
+        echo "the token value is on a docker command line" >&2
+        return 1
+    }
+    for role in personal work; do
+        line=$(grep -E '^run ' "$DOCKER_LOG" | grep -E "run-in-container\.sh $role\$" || true)
+        case " $line " in
+            *" -e MISE_GITHUB_TOKEN "* | *" --env MISE_GITHUB_TOKEN "*) ;;
+            *) echo "role $role: no -e/--env MISE_GITHUB_TOKEN: $line" >&2; return 1 ;;
+        esac
+    done
+    grep -qx run "$DOCKER_TOKEN_LOG" || { echo "docker run did not see MISE_GITHUB_TOKEN in its environment" >&2; return 1; }
+}
+
+@test "run.sh: system without MISE_GITHUB_TOKEN still runs every role (control)" {
+    run env PATH="$STUBS:$SYSBIN" "$RUN" system
+    expect_status 0
+    expect_equal "docker runs" 2 "$(grep -c '^run ' "$DOCKER_LOG")"
+}
+
+@test "system: run-in-container.sh checks mise's installs on rerun and that the token is not stored" {
+    f="$SYS/run-in-container.sh"
+    for want in '.local/share/mise/installs' 'MISE_GITHUB_TOKEN' 'mise_installs'; do
+        grep -qF -- "$want" "$f" || { echo "run-in-container.sh lacks: $want" >&2; return 1; }
+    done
+    # The token is only ever compared, never printed.
+    bad=$(grep -nE '(echo|printf)[^|]*MISE_GITHUB_TOKEN' "$f" || true)
+    expect_equal "lines printing the token" "" "$bad"
 }
 
 # --------------------------------------- upgrade path (slice 4, 16)
