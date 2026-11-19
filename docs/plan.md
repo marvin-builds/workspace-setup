@@ -286,14 +286,16 @@ green, PR.
    untracked `local/` drop-in, PATH for `~/.local/bin`, starship, emacs-mode
    line editing, first dated migration script that removes the old marker
    blocks and `ws-*` functions.
-5. **Packages.** *Status: implemented on `slice-05-packages`, see
+5. **Packages.** *Status: merged (PR #8), see
    [brief](briefs/05-packages.md). Flatpak and the runner-VM job wait for
    the first app that needs them.* `packages.yaml` JSON Schema + Linux installer (apt, apt repos
    with key fingerprint and deb822 sources, flatpak), role/form filtering,
    weekly check that every package id exists (M5). First entries: git, gh,
    ripgrep, fzf, glow (Charm repo), `file`. Runner-VM CI job (layer 3)
    for the flatpak path, moved here from slice 3.
-6. **Runtimes and binary tools via mise.** `mise.toml` + `mise.lock`,
+6. **Runtimes and binary tools via mise.** *Status: implemented on
+   `slice-06-mise`, see [brief](briefs/06-mise.md). mise comes from
+   its apt repo; node and python are pinned exactly (Renovate).* `mise.toml` + `mise.lock`,
    `mise install --locked`, `jdx/mise-action` with `GITHUB_TOKEN` in CI.
    node, python, uv, and yazi (check the aqua registry first). Replaces
    rustup/cargo builds. Renovate config for mise.
