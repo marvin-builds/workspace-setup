@@ -6,7 +6,9 @@
 # Interface (the implementation follows this):
 #
 #   home/dot_config/mise/config.toml  -> ~/.config/mise/config.toml
-#     [tools] lists exactly node, python, uv, starship and yazi. A key is
+#     [tools] lists exactly node, python, uv, starship and yazi, and since
+#     slice 7 the fonts github:JetBrains/JetBrainsMono and
+#     github:ryanoasis/nerd-fonts (see "fonts" below). A key is
 #     a short name (node) or a backend-qualified one (aqua:astral-sh/uv);
 #     its short name is the part after the last ':' or '/'. A value is a
 #     version string, a list (first entry counts) or a table with
@@ -135,14 +137,14 @@ version_of() {
 
 # ------------------------------------------------------- config (4, 6)
 
-@test "mise config: lists exactly node, python, uv, starship and yazi (criterion 4)" {
+@test "mise config: lists exactly node, python, uv, starship, yazi and the two fonts (criterion 4, slice 7 criterion 1)" {
     require_config
     run config_tools "$CONFIG"
     expect_status 0
     names=$(printf '%s\n' "$output" | while IFS="$TAB" read -r key _; do
         [ -z "$key" ] || short "$key"
     done | LC_ALL=C sort | tr '\n' ' ')
-    expect_equal "tools" "node python starship uv yazi " "$names"
+    expect_equal "tools" "JetBrainsMono nerd-fonts node python starship uv yazi " "$names"
 }
 
 @test "mise config: node is the Active LTS major 26, python 3.14 (criterion 4)" {
@@ -298,6 +300,152 @@ lock_fixture() {
     sed -i '/platforms.linux-arm64/,$d' "$TEST_TMP/mise.lock"
     run lock_errors "$TEST_TMP/config.toml" "$TEST_TMP/mise.lock"
     expect_output_matches '^node 26\.1\.0: no checksum for linux-arm64$'
+}
+
+# ------------------------------------------------ fonts (slice 7, 1, 2)
+#
+# Interface (slice 7, docs/briefs/07-fonts-externals.md, criterion 1):
+#
+#   "github:JetBrains/JetBrainsMono": a version string or a table with
+#     `version` (and, optionally, an asset_pattern that selects
+#     JetBrainsMono-<v>.zip);
+#   "github:ryanoasis/nerd-fonts": a table with `version` and
+#     `asset_pattern` (decided with the test writer: mise's github backend
+#     option, a glob) that selects NerdFontsSymbolsOnly.tar.xz and none of
+#     the release's other assets.
+#   Both pinned exactly, at least the versions the brief checked (2.304
+#   and 3.5.1; a newer release found on the recheck is fine). The lockfile
+#   entries of both, for linux-x64 and linux-arm64, download that asset
+#   (their `url` ends with /<asset>); the generic checksum test above
+#   covers their checksums.
+
+FONT_JB='github:JetBrains/JetBrainsMono'
+FONT_NF='github:ryanoasis/nerd-fonts'
+
+# font_field <config key> <version|asset_pattern>: the field of that tool
+# in the config; a plain string counts as its version. Empty when unset.
+font_field() {
+    tmpl "{{- \$v := index (include \"$CONFIG\" | fromToml).tools \"$1\" -}}
+{{- if and (kindIs \"string\" \$v) (eq \"$2\" \"version\") }}{{ \$v -}}
+{{- else if kindIs \"map\" \$v }}{{ toString (dig \"$2\" \"\" \$v) -}}
+{{- end -}}"
+}
+
+# require_font <config key>: fails naming the key when the config lacks it.
+require_font() {
+    has=$(tmpl "{{ hasKey (include \"$CONFIG\" | fromToml).tools \"$1\" }}")
+    [ "$has" = true ] && return 0
+    echo "home/dot_config/mise/config.toml has no tool \"$1\"" >&2
+    return 1
+}
+
+# version_at_least <version> <minimum>: true when version >= minimum.
+version_at_least() {
+    [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]
+}
+
+# glob_matches <glob> <name>
+glob_matches() {
+    # shellcheck disable=SC2254 # the pattern is meant to be a glob
+    case $2 in
+        $1) return 0 ;;
+    esac
+    return 1
+}
+
+# lock_urls <config key>: one line per Linux platform entry, platform<TAB>url.
+lock_urls() {
+    lock=$(lockfile) || return 1
+    tmpl "{{- \$l := include \"$lock\" | fromToml -}}
+{{- \$v := dig \"tools\" \"$1\" list \$l -}}
+{{- \$es := list \$v -}}
+{{- if kindIs \"slice\" \$v }}{{ \$es = \$v }}{{ end -}}
+{{- range \$es -}}
+{{-   \$e := . -}}
+{{-   range \$p := list \"linux-x64\" \"linux-arm64\" -}}
+{{ \$p }}{{ \"\\t\" }}{{ or (dig \"platforms\" \$p \"url\" \"\" \$e) (dig (printf \"platforms.%s\" \$p) \"url\" \"\" \$e) }}{{ \"\\n\" }}
+{{-   end -}}
+{{- end -}}"
+}
+
+@test "mise config: JetBrains Mono from github:JetBrains/JetBrainsMono, pinned exactly (slice 7, criterion 1)" {
+    require_config
+    require_font "$FONT_JB"
+    v=$(font_field "$FONT_JB" version)
+    printf '%s\n' "$v" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || {
+        echo "$FONT_JB is '$v', want an exact version such as 2.304" >&2
+        return 1
+    }
+    version_at_least "$v" 2.304 || { echo "$FONT_JB $v is older than 2.304" >&2; return 1; }
+    pat=$(font_field "$FONT_JB" asset_pattern)
+    [ -z "$pat" ] || glob_matches "$pat" "JetBrainsMono-$v.zip" || {
+        echo "$FONT_JB asset_pattern '$pat' does not select JetBrainsMono-$v.zip" >&2
+        return 1
+    }
+}
+
+@test "mise config: the Nerd Font Symbols from github:ryanoasis/nerd-fonts, pinned exactly (slice 7, criterion 1)" {
+    require_config
+    require_font "$FONT_NF"
+    v=$(font_field "$FONT_NF" version)
+    printf '%s\n' "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+        echo "$FONT_NF version is '$v', want an exact x.y.z" >&2
+        return 1
+    }
+    version_at_least "$v" 3.5.1 || { echo "$FONT_NF $v is older than 3.5.1" >&2; return 1; }
+}
+
+@test "mise config: nerd-fonts' asset_pattern selects NerdFontsSymbolsOnly.tar.xz only (slice 7, criterion 1)" {
+    require_config
+    require_font "$FONT_NF"
+    pat=$(font_field "$FONT_NF" asset_pattern)
+    [ -n "$pat" ] || { echo "$FONT_NF has no asset_pattern" >&2; return 1; }
+    glob_matches "$pat" NerdFontsSymbolsOnly.tar.xz || {
+        echo "asset_pattern '$pat' does not match NerdFontsSymbolsOnly.tar.xz" >&2
+        return 1
+    }
+    # Other assets of a nerd-fonts release (a sample).
+    for other in NerdFontsSymbolsOnly.zip JetBrainsMono.tar.xz FiraCode.tar.xz \
+        Hack.zip FontPatcher.zip SymbolsOnly.tar.xz; do
+        ! glob_matches "$pat" "$other" || {
+            echo "asset_pattern '$pat' also matches $other" >&2
+            return 1
+        }
+    done
+}
+
+@test "mise lockfile: both fonts download their selected asset on linux-x64 and linux-arm64 (slice 7, criterion 1)" {
+    require_config
+    for key in "$FONT_JB" "$FONT_NF"; do
+        require_font "$key"
+        v=$(font_field "$key" version)
+        case $key in
+            "$FONT_JB") asset="JetBrainsMono-$v.zip" ;;
+            *) asset=NerdFontsSymbolsOnly.tar.xz ;;
+        esac
+        run lock_urls "$key"
+        expect_status 0
+        for p in linux-x64 linux-arm64; do
+            printf '%s\n' "$output" | grep -F "$p$TAB" | grep -qE "/${asset//./\\.}\$" || {
+                printf '%s: no %s lock entry downloading %s; lock urls:\n%s\n' "$key" "$p" "$asset" "$output" >&2
+                return 1
+            }
+        done
+    done
+}
+
+@test "expect.yaml: the mise-font-* checks name the config's font keys (slice 7, criterion 2)" {
+    require_config
+    for pair in "mise-font-jetbrains-mono=$FONT_JB" "mise-font-nerd-symbols=$FONT_NF"; do
+        id=${pair%%=*}
+        key=${pair#*=}
+        require_font "$key"
+        smoke=$(tmpl "{{ range (include \"$EXPECT\" | fromYaml).checks }}{{ if eq (toString .id) \"$id\" }}{{ .smoke }}{{ end }}{{ end }}")
+        printf '%s\n' "$smoke" | grep -qF -- "mise where $key" || {
+            echo "$id does not run 'mise where $key': $smoke" >&2
+            return 1
+        }
+    done
 }
 
 # ------------------------------------------- expect.yaml in step (15)

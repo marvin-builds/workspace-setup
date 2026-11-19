@@ -1,0 +1,85 @@
+{{- /* Links the fonts mise installed (slice 7) into the one font dir this
+       script owns. The hashes below make chezmoi rerun it whenever the
+       mise config or the lockfile changes, so a font bump relinks. */ -}}
+{{- $dir := joinPath .chezmoi.sourceDir "dot_config" "mise" -}}
+#!/bin/sh
+# Links the .ttf and .otf files of the fonts in ~/.config/mise/config.toml,
+# at the versions mise.lock pins, into ~/.local/share/fonts/ws and updates
+# fontconfig's cache for it. The dir is rebuilt on every run, so links of
+# an older version don't survive a bump; nothing outside it is touched.
+# Runs after install-tools, which installs the fonts.
+# config.toml sha256: {{ include (joinPath $dir "config.toml") | sha256sum }}
+# mise.lock sha256: {{ include (joinPath $dir "mise.lock") | sha256sum }}
+# Linux desktop only (.chezmoiignore).
+set -eu
+# Applying into another directory than the home (tests, previews) links
+# nothing.
+if [ "${CHEZMOI_DEST_DIR:-}" != "${CHEZMOI_HOME_DIR:-}" ]; then
+    printf 'link-fonts: skipped, the destination %s is not the home %s\n' \
+        "${CHEZMOI_DEST_DIR:-}" "${CHEZMOI_HOME_DIR:-}"
+    exit 0
+fi
+command -v mise >/dev/null 2>&1 || {
+    echo 'link-fonts: mise not found; the package installer installs it from its apt repo' >&2
+    exit 1
+}
+command -v fc-cache >/dev/null 2>&1 || {
+    echo 'link-fonts: fc-cache not found; the package installer installs fontconfig' >&2
+    exit 1
+}
+
+# The fonts, by their keys in config.toml; mise knows their install dirs.
+fonts='github:JetBrains/JetBrainsMono github:ryanoasis/nerd-fonts'
+owned="${XDG_DATA_HOME:-$HOME/.local/share}/fonts/ws"
+
+# List every font's files first, so a missing font, a font without font
+# files or a failing search leaves the owned dir as it was. One line per
+# file: <subdir name><TAB><install dir><TAB><path in the install dir>.
+tab=$(printf '\t')
+list=
+for tool in $fonts; do
+    d=$(mise where "$tool") || {
+        status=$?
+        echo "link-fonts: mise where $tool failed (exit $status), see above" >&2
+        exit "$status"
+    }
+    if [ -z "$d" ] || [ ! -d "$d" ]; then
+        echo "link-fonts: $tool has no install dir ('$d'); run mise install --locked" >&2
+        exit 1
+    fi
+    files=$(cd "$d" && find . -type f \( -name '*.ttf' -o -name '*.otf' \)) || {
+        status=$?
+        echo "link-fonts: searching $d for the fonts of $tool failed (exit $status), see above" >&2
+        exit "$status"
+    }
+    if [ -z "$files" ]; then
+        echo "link-fonts: $tool has no .ttf or .otf file in $d" >&2
+        exit 1
+    fi
+    name=$(printf '%s' "${tool#*:}" | tr '/' '-')
+    while IFS= read -r f; do
+        list="$list$name$tab$d$tab${f#./}
+"
+    done <<EOF
+$files
+EOF
+done
+
+# Rebuild the owned dir from scratch: a subdir per font that mirrors its
+# install dir, with a link to each of its .ttf and .otf files. A here
+# document, not a pipeline, so a failing mkdir or ln stops the script.
+rm -rf "$owned"
+mkdir -p "$owned"
+while IFS="$tab" read -r name d f; do
+    [ -n "$f" ] || continue
+    mkdir -p "$owned/$name/$(dirname "$f")"
+    ln -s "$d/$f" "$owned/$name/$f"
+done <<EOF
+$list
+EOF
+
+fc-cache -f "$owned" || {
+    status=$?
+    echo "link-fonts: fc-cache failed on $owned (exit $status), see above" >&2
+    exit "$status"
+}

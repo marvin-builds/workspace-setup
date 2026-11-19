@@ -33,8 +33,9 @@ Principles:
    `{apt, flatpak, winget, scoop, brew}`. A new OS fills a column.
 4. **Everything pinned, bumps automated.** Tools in `mise.toml` + `mise.lock`
    (installed with `mise install --locked`; `aqua:` backend first, then
-   `github:`, never the deprecated `ubi:`). Fonts and plugins as chezmoi
-   externals with version + sha256. Renovate opens bump PRs for all of them,
+   `github:`, never the deprecated `ubi:`). Fonts through mise as well, so
+   `mise.lock` holds their checksums; plugins as chezmoi externals pinned to
+   a git commit (slice 7). Renovate opens bump PRs for all of them,
    and CI tests each bump.
 5. **Helpers are files, not shell functions.** Executables on PATH, picked by
    extension, so bash and PowerShell share them. Per-shell profiles only
@@ -71,12 +72,12 @@ Principles:
 ```
 bootstrap.sh                        # POSIX sh: installs pinned chezmoi (+git), verifies checksum, runs init --apply
 .chezmoiroot                        # "home": source state lives in home/
-renovate.json                       # bump PRs: mise, externals (version + sha256), plugin revisions
+renovate.json                       # bump PRs: mise (incl. fonts), plugin commits, actions
 home/.chezmoiversion                # minimum chezmoi version
 home/.chezmoi.toml.tmpl             # one-time prompts -> chezmoi data (see "Machine data")
 home/.chezmoidata/packages.yaml     # logical app -> per-OS ids, apt repos, role/form filters
 home/.chezmoidata/keybindings.yaml  # logical bindings, `mod` alias, per-OS reserved chords
-home/.chezmoiexternal.toml.tmpl     # pinned downloads: fonts, plugins (version + checksum)
+home/.chezmoiexternal.toml          # pinned downloads: plugins (commit-pinned)
 home/.chezmoiignore                 # per-OS / per-role / per-form exclusions
 home/.chezmoiscripts/linux/         # run_onchange_* installers (hash of their data in the template)
 home/dot_config/                    # app configs (git, starship, mise, wezterm, yazi, shell drop-ins)
@@ -127,8 +128,8 @@ Asked once by `.chezmoi.toml.tmpl`, overridable in tests via `--config`:
 |---|---|
 | Third-party apt repos with signing keys (e.g. Charm for glow) | `packages.yaml` has an `apt_repos` section (key URL, key fingerprint, keyring path, deb822 source); the Linux installer verifies the key and adds the repo before installing. Data, not code. |
 | Tools not in distro repos (yazi built via cargo + rustup before) | mise `aqua:`/`github:` backends, locked in `mise.lock`. Fall back to cargo via mise only if no binary exists. |
-| Pinned plugin revisions (yazi piper plugin) | chezmoi external (git-repo or archive) pinned to a revision, or a `run_onchange` that calls `ya pkg` with the pinned rev from data. Renovate bumps the revision. |
-| Fonts (Nerd Font Symbols; JetBrains Mono is used but never installed) | chezmoi externals with pinned version + checksum into `~/.local/share/fonts`, `run_onchange` → `fc-cache`. |
+| Pinned plugin revisions (yazi piper plugin) | chezmoi `archive` external pinned to a full commit (the commit is the integrity pin). Renovate's `git-refs` digest updates bump it (slice 7). |
+| Fonts (Nerd Font Symbols; JetBrains Mono, used but never installed by the old setup) | mise `github:` tools, checksums in `mise.lock`; a desktop-only `run_onchange` links them into an owned dir under `~/.local/share/fonts` and runs `fc-cache` (slice 7). Hosted Renovate can't update a sha256 next to a version, so externals with checksums were dropped. |
 | Files that other tools also write (`~/.claude/settings.json`) | Prefer the app's own layering (Claude plugins and marketplaces). For the rest, `modify_` templates that merge only the keys we own, with explicit array rules and an ownership record (M3). Never track `~/.claude.json` or `~/.claude/projects/`. |
 | Configs we fully own (wezterm.lua, starship, yazi) | Own the whole file; offer a `require`/include of an untracked local file for machine tweaks. Resolve the old duplicate Ctrl+Shift+E binding. |
 | Rc files on a hand-grown machine | Own bashrc, source an untracked `~/.config/shell/local/*.sh` drop-in for third-party installers; `ws doctor` flags foreign lines (M4). |
@@ -293,15 +294,17 @@ green, PR.
    weekly check that every package id exists (M5). First entries: git, gh,
    ripgrep, fzf, glow (Charm repo), `file`. Runner-VM CI job (layer 3)
    for the flatpak path, moved here from slice 3.
-6. **Runtimes and binary tools via mise.** *Status: implemented on
-   `slice-06-mise`, see [brief](briefs/06-mise.md). mise comes from
+6. **Runtimes and binary tools via mise.** *Status: merged (PR #9), see
+   [brief](briefs/06-mise.md). mise comes from
    its apt repo; node and python are pinned exactly (Renovate).* `mise.toml` + `mise.lock`,
    `mise install --locked`, `jdx/mise-action` with `GITHUB_TOKEN` in CI.
    node, python, uv, and yazi (check the aqua registry first). Replaces
    rustup/cargo builds. Renovate config for mise.
-7. **Fonts and pinned externals.** Nerd Font Symbols, JetBrains Mono, yazi
-   plugins pinned to a revision. Renovate regex managers for the version +
-   sha256 pairs and plugin revisions.
+7. **Fonts and pinned externals.** *Status: implemented on
+   `slice-07-externals`, see [brief](briefs/07-fonts-externals.md). Fonts
+   come from mise, the plugin is a commit-pinned external.* Nerd Font
+   Symbols, JetBrains Mono, yazi plugins pinned to a revision. Renovate
+   for the plugin commit, GitHub Actions and the validator pins.
 8. **App configs.** git, wezterm (own file + local override, install via its
    apt repo), yazi, glow. Red first: `keybindings.yaml` with
    `mod+shift+e: launcher` on all OSes, `mod` alias, per-OS `reserved`

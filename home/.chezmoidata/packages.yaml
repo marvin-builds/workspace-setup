@@ -76,6 +76,16 @@ packages:
     winget: null
     scoop: null
     brew: null
+  # fc-cache and fc-list for the fonts mise installs (slice 7); the font
+  # linker runs on a desktop only. Windows and macOS have their own font
+  # handling.
+  fontconfig:
+    apt: fontconfig
+    flatpak: null
+    winget: null
+    scoop: null
+    brew: null
+    forms: [desktop]
 
 apt_repos:
   # GitHub CLI's docs/install_linux.md, which lists both primary keys of

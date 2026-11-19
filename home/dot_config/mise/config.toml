@@ -28,3 +28,10 @@ python = "3.14.10"
 "aqua:starship/starship" = "1.27.0"
 # Provides yazi and ya.
 "aqua:sxyazi/yazi" = "26.9.1"
+# Fonts (slice 7): installed on every form, linked into fontconfig's
+# search path on a desktop only (run_onchange_after_link-fonts.sh).
+# version_prefix: the release tags start with "v"; it makes Renovate
+# propose a bare version such as "2.305" rather than the tag "v2.305".
+"github:JetBrains/JetBrainsMono" = { version = "2.304", version_prefix = "v" }
+# The release has an archive per font: the symbols-only one.
+"github:ryanoasis/nerd-fonts" = { version = "3.5.1", version_prefix = "v", asset_pattern = "NerdFontsSymbolsOnly.tar.xz" }

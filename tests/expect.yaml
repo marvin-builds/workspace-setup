@@ -208,3 +208,35 @@ checks:
     os: [linux]
     command: bash
     smoke: 'env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=dumb bash -ic ''ws_mise_once() { p=$(printf "%s\n" "$PATH" | tr : "\n" | grep -F "$HOME/.local/share/mise/installs/"); [ -n "$p" ] && [ -z "$(printf "%s\n" "$p" | sort | uniq -d)" ]; }; ws_mise_once && . ~/.bashrc && ws_mise_once && export -f ws_mise_once && bash -ic ws_mise_once'''
+
+  # Fonts (slice 7). mise installs them from mise.lock on every form, so
+  # the container system test downloads and checks them too.
+  - id: mise-font-jetbrains-mono
+    os: [linux]
+    command: mise
+    smoke: 'd=$(mise where github:JetBrains/JetBrainsMono) && find "$d" -name "*.ttf" | grep -q .'
+
+  - id: mise-font-nerd-symbols
+    os: [linux]
+    command: mise
+    smoke: 'd=$(mise where github:ryanoasis/nerd-fonts) && find "$d" -name "*.ttf" | grep -q .'
+
+  # Only a desktop links them, into ${XDG_DATA_HOME:-~/.local/share}/
+  # fonts/ws, the one font dir run_onchange_after_link-fonts.sh owns;
+  # fontconfig must list the family from a file there.
+  - id: fonts-jetbrains-mono
+    os: [linux]
+    forms: [desktop]
+    command: fc-list
+    smoke: 'fc-list : file family | grep -F "${XDG_DATA_HOME:-$HOME/.local/share}/fonts/ws/" | grep -qF "JetBrains Mono"'
+
+  - id: fonts-nerd-symbols
+    os: [linux]
+    forms: [desktop]
+    command: fc-list
+    smoke: 'fc-list : file family | grep -F "${XDG_DATA_HOME:-$HOME/.local/share}/fonts/ws/" | grep -qF "Symbols Nerd Font"'
+
+  # The yazi piper plugin, a chezmoi external pinned to a commit (slice 7).
+  - id: yazi-piper
+    os: [linux]
+    file: ~/.config/yazi/plugins/piper.yazi/main.lua

@@ -1,0 +1,17 @@
+# Files chezmoi downloads (slice 7, docs/briefs/07-fonts-externals.md).
+# Each URL is immutable: an archive of one git commit, which is its
+# integrity pin, so there is no refreshPeriod and no separate checksum.
+# Renovate opens a PR when the branch moves on (renovate.json, git-refs).
+# Bump by hand: replace the commit with the newest one on main
+# (`gh api repos/yazi-rs/plugins/commits/main --jq .sha`).
+# Left out on other OSes and when applying into another directory than
+# the home (.chezmoiignore), so tests download nothing.
+
+# yazi's piper previewer (yazi-rs/plugins, main). exact: files a newer
+# commit drops are removed too.
+[".config/yazi/plugins/piper.yazi"]
+    type = "archive"
+    url = "https://github.com/yazi-rs/plugins/archive/1ef5fe02a6122f8f3bb47a41056aab3f4b8598bf.tar.gz"
+    exact = true
+    stripComponents = 2
+    include = ["*/piper.yazi/**"]

@@ -237,6 +237,20 @@ repo() {
     expect_equal "libatomic1 winget|scoop|brew" 'null|null|null' "$output"
 }
 
+@test "packages.yaml: fontconfig for fc-cache and fc-list, desktop only (slice 7, criterion 7)" {
+    require_packages
+    # No other entry pulls fontconfig in, so it gets its own (brief,
+    # criterion 7); the link-fonts script runs fc-cache on a desktop.
+    has=$(tmpl "{{ hasKey (include \"$PACKAGES\" | fromYaml).packages \"fontconfig\" }}")
+    expect_equal "packages.fontconfig exists" true "$has"
+    run entry fontconfig
+    expect_status 0
+    expect_equal "packages.fontconfig (apt|flatpak|apt_repo|roles|forms|all columns)" '"fontconfig"|null|-|false|true|true' "$output"
+    run tmpl "{{ toJson (include \"$PACKAGES\" | fromYaml).packages.fontconfig.forms }}"
+    expect_status 0
+    expect_equal "fontconfig forms" '["desktop"]' "$output"
+}
+
 @test "packages.yaml: mise repo as in mise's install docs (slice 6, criterion 1)" {
     require_packages
     run repo mise
