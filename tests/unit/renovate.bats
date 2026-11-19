@@ -246,3 +246,278 @@ PYTHON_GATE='{"matchDepNames": ["python"], "matchUpdateTypes": ["minor", "major"
     grouping '{"packageRules": [{"matchDepNames": ["node"], "matchUpdateTypes": ["major"], "dependencyDashboardApproval": true}]}'
     expect_equal "grouping errors" "" "$output"
 }
+
+# ======================================================================
+# Slice 7 (criteria 10, 11): more managers and the pins they bump.
+#
+# Interface (the implementation follows this):
+#
+#   enabledManagers holds at least mise, github-actions and custom.regex.
+#   customManagers: regex managers (customType "regex"). A manager applies
+#   to a file when one of its managerFilePatterns (a "/regex/" or a glob)
+#   or fileMatch regexes matches the file's path from the repo root. Each
+#   of its matchStrings is applied to the whole file, every match counts
+#   (Renovate's default matchStringsStrategy "any"). A field comes from
+#   the named group of the same name, else from <field>Template (taken
+#   literally: no handlebars). packageName falls back to depName.
+#   The regexes are evaluated with Go's RE2 (chezmoi's regexFindAll),
+#   close to the RE2 engine Renovate uses; named groups as (?<name>...).
+#
+#   - The externals file (home/.chezmoiexternal.toml or .toml.tmpl): a
+#     match with datasource git-refs, currentValue main, currentDigest the
+#     commit in the yazi-rs/plugins url, packageName
+#     https://github.com/yazi-rs/plugins (optionally with .git).
+#   - .github/workflows/ci.yml: a match with datasource npm, packageName
+#     renovate and currentValue the version in "renovate@<v>", and one with
+#     datasource node-version (or its old name node), packageName node and
+#     currentValue the version in "node@<v>".
+#   - The validator's node stays within major 24 (decided with the test
+#     writer): a packageRule that names node (matchDepNames or
+#     matchPackageNames), is kept off mise's node (matchManagers without
+#     "mise", or matchFileNames naming .github/workflows/ci.yml) and sets
+#     allowedVersions to one of: <25, <25.0.0, 24.x, ^24, ~24, or a
+#     /^24.../ or /^v?24.../ regex.
+#   - slice 6's three packageRules (all fields but description) stay, in
+#     their order.
+#   - Every `uses:` in .github/workflows/ is <action>@<40 hex> # vX[.Y[.Z]]
+#     (local ./ and docker:// actions excepted).
+
+TAB=$(printf '\t')
+
+# managers_for <renovate.json> <path from the repo root>: the index of
+# every regex manager whose file patterns match the path, one per line.
+MANAGERS_FOR='
+{{- $c := include "@PATH@" | fromJson -}}
+{{- range $i, $m := (dig "customManagers" list $c) -}}
+{{-   if eq (toString (dig "customType" "" $m)) "regex" -}}
+{{-     range $p := (dig "managerFilePatterns" list $m) -}}
+{{-       if regexMatch "^/.*/[a-z]*$" $p -}}
+{{-         if regexMatch (regexReplaceAll "^/(.*)/[a-z]*$" $p "${1}") "@FILE@" }}R{{ $i }}{{ "\n" }}{{ end -}}
+{{-       else -}}
+G{{ $i }}{{ "\t" }}{{ $p }}{{ "\n" }}
+{{-       end -}}
+{{-     end -}}
+{{-     range $p := (dig "fileMatch" list $m) -}}
+{{-       if regexMatch $p "@FILE@" }}R{{ $i }}{{ "\n" }}{{ end -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+'
+
+managers_for() {
+    out=$(tmpl "$(printf '%s' "$MANAGERS_FOR" | sed -e "s|@PATH@|$1|" -e "s|@FILE@|$2|")") || return 1
+    printf '%s\n' "$out" | while IFS="$TAB" read -r tag glob; do
+        case $tag in
+            R*) printf '%s\n' "${tag#R}" ;;
+            G*)
+                # shellcheck disable=SC2254 # a glob from the config
+                case $2 in $glob) printf '%s\n' "${tag#G}" ;; esac
+                ;;
+        esac
+    done | LC_ALL=C sort -u
+}
+
+# captures <renovate.json> <manager index> <file>: one line per match of
+# any of the manager's matchStrings in the file:
+# depName<TAB>packageName<TAB>datasource<TAB>currentValue<TAB>currentDigest.
+CAPTURES='
+{{- $c := include "@PATH@" | fromJson -}}
+{{- $m := index (dig "customManagers" list $c) @IDX@ -}}
+{{- $text := include "@CONTENT@" -}}
+{{- range $s := (dig "matchStrings" list $m) -}}
+{{-   range $hit := regexFindAll $s $text -1 -}}
+{{-     $out := list -}}
+{{-     range $f := list "depName" "packageName" "datasource" "currentValue" "currentDigest" -}}
+{{-       $v := regexReplaceAll $s $hit (printf "${%s}" $f) -}}
+{{-       if eq $v "" }}{{ $v = toString (dig (printf "%sTemplate" $f) "" $m) }}{{ end -}}
+{{-       $out = append $out $v -}}
+{{-     end -}}
+{{-     if eq (index $out 1) "" }}{{ $out = list (index $out 0) (index $out 0) (index $out 2) (index $out 3) (index $out 4) }}{{ end -}}
+{{ join "\t" $out }}{{ "\n" }}
+{{-   end -}}
+{{- end -}}
+'
+
+captures() {
+    tmpl "$(printf '%s' "$CAPTURES" | sed -e "s|@PATH@|$1|" -e "s|@IDX@|$2|" -e "s|@CONTENT@|$3|")"
+}
+
+# all_captures <renovate.json> <repo root> <path from the root>: the
+# captures of every regex manager that applies to the file.
+all_captures() {
+    idx=$(managers_for "$1" "$3") || { echo "cannot evaluate the file patterns" >&2; return 1; }
+    for i in $idx; do
+        captures "$1" "$i" "$2/$3" || { echo "manager $i: cannot apply its matchStrings" >&2; return 1; }
+    done
+}
+
+# externals_path: the externals file's path from the repo root.
+externals_path() {
+    for n in home/.chezmoiexternal.toml home/.chezmoiexternal.toml.tmpl; do
+        [ ! -f "$REPO_ROOT/$n" ] || { printf '%s\n' "$n"; return 0; }
+    done
+    echo "no home/.chezmoiexternal.toml(.tmpl)" >&2
+    return 1
+}
+
+# expect_capture <label> <captures> <ERE for a whole line>
+expect_capture() {
+    printf '%s\n' "$2" | grep -qE -- "$3" && return 0
+    printf '%s: no capture matches /%s/; captures (depName packageName datasource currentValue currentDigest):\n%s\n' \
+        "$1" "$3" "$2" >&2
+    return 1
+}
+
+@test "renovate.json: enabledManagers holds mise, github-actions and custom.regex (slice 7, criterion 10)" {
+    require_renovate
+    run tmpl "{{ range (dig \"enabledManagers\" list (include \"$RENOVATE\" | fromJson)) }}{{ . }}{{ \"\\n\" }}{{ end }}"
+    expect_status 0
+    for m in mise github-actions custom.regex; do
+        printf '%s\n' "$output" | grep -qxF "$m" || {
+            printf 'enabledManagers lacks %s:\n%s\n' "$m" "$output" >&2
+            return 1
+        }
+    done
+}
+
+@test "renovate.json: a regex manager bumps the yazi plugin commit with git-refs on main (slice 7, criteria 10, 11)" {
+    require_renovate
+    ext=$(externals_path)
+    commit=$(grep -oE 'yazi-rs/plugins/archive/[0-9a-f]{40}\.tar\.gz' "$REPO_ROOT/$ext" |
+        head -n 1 | sed -E 's|.*/archive/([0-9a-f]{40}).*|\1|')
+    [ -n "$commit" ] || { echo "no pinned yazi-rs/plugins url in $ext" >&2; return 1; }
+    run all_captures "$RENOVATE" "$REPO_ROOT" "$ext"
+    expect_status 0
+    expect_capture "$ext" "$output" \
+        "^[^$TAB]*${TAB}https://github\\.com/yazi-rs/plugins(\\.git)?${TAB}git-refs${TAB}main${TAB}$commit\$"
+}
+
+@test "renovate.json: a regex manager bumps the validator's renovate with npm (slice 7, criteria 10, 11)" {
+    require_renovate
+    ci=.github/workflows/ci.yml
+    v=$(grep -oE 'renovate@[0-9]+\.[0-9]+\.[0-9]+' "$REPO_ROOT/$ci" | head -n 1 | cut -d @ -f 2)
+    [ -n "$v" ] || { echo "no renovate@<version> in $ci" >&2; return 1; }
+    run all_captures "$RENOVATE" "$REPO_ROOT" "$ci"
+    expect_status 0
+    expect_capture "$ci" "$output" "^[^$TAB]*${TAB}renovate${TAB}npm${TAB}${v//./\\.}${TAB}\$"
+}
+
+@test "renovate.json: a regex manager bumps the validator's node with the node datasource (slice 7, criteria 10, 11)" {
+    require_renovate
+    ci=.github/workflows/ci.yml
+    v=$(grep -oE 'node@[0-9]+\.[0-9]+\.[0-9]+' "$REPO_ROOT/$ci" | head -n 1 | cut -d @ -f 2)
+    [ -n "$v" ] || { echo "no node@<version> in $ci" >&2; return 1; }
+    run all_captures "$RENOVATE" "$REPO_ROOT" "$ci"
+    expect_status 0
+    expect_capture "$ci" "$output" "^[^$TAB]*${TAB}node${TAB}(node-version|node)${TAB}${v//./\\.}${TAB}\$"
+}
+
+# NODE24_RULES: allowedVersions of every packageRule that names node and
+# is kept off mise's node.
+NODE24_RULES='
+{{- $c := include "@PATH@" | fromJson -}}
+{{- range (dig "packageRules" list $c) -}}
+{{-   $names := concat (dig "matchDepNames" list .) (dig "matchPackageNames" list .) -}}
+{{-   $mgrs := dig "matchManagers" list . -}}
+{{-   $files := join " " (dig "matchFileNames" list .) -}}
+{{-   $offMise := or (and (not (empty $mgrs)) (not (has "mise" $mgrs))) (contains "ci.yml" $files) -}}
+{{-   if and (has "node" $names) $offMise (hasKey . "allowedVersions") -}}
+{{ get . "allowedVersions" }}{{ "\n" }}
+{{-   end -}}
+{{- end -}}
+'
+
+@test "renovate.json: the validator's node stays within major 24 (slice 7, criterion 10)" {
+    require_renovate
+    run tmpl "$(printf '%s' "$NODE24_RULES" | sed "s|@PATH@|$RENOVATE|")"
+    expect_status 0
+    printf '%s\n' "$output" | grep -qE '^(<25(\.0\.0)?|24\.x|\^24|~24|/\^v?24.*/)$' || {
+        printf 'no packageRule for the CI node (off mise) with allowedVersions within 24; found:\n%s\n' "$output" >&2
+        return 1
+    }
+}
+
+SLICE6_RULES='{"matchDepNames":["python"],"matchManagers":["mise"],"separateMinorPatch":true}
+{"dependencyDashboardApproval":true,"matchDepNames":["node"],"matchManagers":["mise"],"matchUpdateTypes":["major"]}
+{"dependencyDashboardApproval":true,"matchDepNames":["python"],"matchManagers":["mise"],"matchUpdateTypes":["minor","major"]}'
+
+@test "renovate.json: slice 6's packageRules are unchanged, in order (slice 7, criterion 10)" {
+    require_renovate
+    run tmpl "{{ range (dig \"packageRules\" list (include \"$RENOVATE\" | fromJson)) }}{{ toJson (omit . \"description\") }}{{ \"\\n\" }}{{ end }}"
+    expect_status 0
+    found=$(printf '%s\n' "$output" | grep -xF "$SLICE6_RULES" || true)
+    expect_equal "slice 6 rules among the packageRules, in order" "$SLICE6_RULES" "$found"
+}
+
+@test "workflows: every action is pinned to a full commit sha with a version comment (slice 7, criteria 10, 11)" {
+    found=0
+    for f in "$REPO_ROOT"/.github/workflows/*.yml "$REPO_ROOT"/.github/workflows/*.yaml; do
+        [ -f "$f" ] || continue
+        bad=$(grep -nE '^[[:space:]]*(-[[:space:]]*)?uses:' "$f" |
+            grep -vE 'uses:[[:space:]]*(\./|docker://)' |
+            grep -vE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v[0-9]+(\.[0-9]+){0,2}[[:space:]]*$' || true)
+        expect_equal "unpinned actions in ${f##*/}" "" "$bad"
+        found=1
+    done
+    expect_equal "workflow files found" 1 "$found"
+}
+
+# ------------------------------------- the regex evaluator itself (11)
+
+# regex_fixture <manager JSON> <file content>: a renovate.json with that
+# one custom manager and a file home/.chezmoiexternal.toml with the
+# content, in $TEST_TMP/fx; prints the captures for that file.
+regex_fixture() {
+    mkdir -p "$TEST_TMP/fx/home"
+    printf '{"customManagers": [%s]}\n' "$1" >"$TEST_TMP/fx/renovate.json"
+    printf '%s\n' "$2" >"$TEST_TMP/fx/home/.chezmoiexternal.toml"
+    all_captures "$TEST_TMP/fx/renovate.json" "$TEST_TMP/fx" home/.chezmoiexternal.toml
+}
+
+FX_COMMIT=0123456789abcdef0123456789abcdef01234567
+FX_URL="url = \"https://github.com/yazi-rs/plugins/archive/$FX_COMMIT.tar.gz\""
+
+# fx_manager <file pattern JSON string>: the manager the brief describes.
+fx_manager() {
+    printf '%s' '{"customType": "regex", "managerFilePatterns": ['"$1"'],
+  "matchStrings": ["https://github\\.com/yazi-rs/plugins/archive/(?<currentDigest>[0-9a-f]{40})\\.tar\\.gz"],
+  "depNameTemplate": "yazi-rs/plugins", "packageNameTemplate": "https://github.com/yazi-rs/plugins",
+  "datasourceTemplate": "git-refs", "currentValueTemplate": "main"}'
+}
+
+@test "regex evaluator: a manager as the brief wants it captures the commit (control)" {
+    run regex_fixture "$(fx_manager '"/(^|/)\\.chezmoiexternal\\.toml(\\.tmpl)?$/"')" "$FX_URL"
+    expect_status 0
+    expect_equal "captures" "yazi-rs/plugins${TAB}https://github.com/yazi-rs/plugins${TAB}git-refs${TAB}main${TAB}$FX_COMMIT" "$output"
+}
+
+@test "regex evaluator: named groups win over templates, packageName falls back to depName" {
+    m='{"customType": "regex", "fileMatch": ["\\.chezmoiexternal\\.toml$"],
+      "matchStrings": ["(?<depName>yazi-rs/plugins)/archive/(?<currentDigest>[0-9a-f]{40})"],
+      "depNameTemplate": "ignored", "datasourceTemplate": "git-refs", "currentValueTemplate": "main"}'
+    run regex_fixture "$m" "$FX_URL"
+    expect_status 0
+    expect_equal "captures" "yazi-rs/plugins${TAB}yazi-rs/plugins${TAB}git-refs${TAB}main${TAB}$FX_COMMIT" "$output"
+}
+
+@test "regex evaluator: a glob file pattern applies the manager" {
+    run regex_fixture "$(fx_manager '"home/.chezmoiexternal.toml*"')" "$FX_URL"
+    expect_status 0
+    expect_output_matches "${TAB}$FX_COMMIT\$"
+}
+
+@test "regex evaluator: a file pattern for another file captures nothing" {
+    run regex_fixture "$(fx_manager '"/\\.chezmoiother\\.toml$/"')" "$FX_URL"
+    expect_status 0
+    expect_equal "captures" "" "$output"
+    run regex_fixture "$(fx_manager '"home/other.toml"')" "$FX_URL"
+    expect_status 0
+    expect_equal "captures" "" "$output"
+}
+
+@test "regex evaluator: a matchString that doesn't match captures nothing" {
+    run regex_fixture "$(fx_manager '"home/.chezmoiexternal.toml"')" \
+        'url = "https://github.com/yazi-rs/plugins/archive/main.tar.gz"'
+    expect_status 0
+    expect_equal "captures" "" "$output"
+}

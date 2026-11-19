@@ -111,8 +111,7 @@ are blocked on the hosted app. Decided with me:
 15. Render tests for every profile, without network: the link-fonts script
     renders only for Linux desktop profiles, embeds both hashes and changes
     when the config or lockfile changes, passes `bash -n` and shellcheck.
-    Render runs exclude externals (`--exclude externals` or equivalent), so
-    they never download.
+    Render runs never download the external (see decision 30).
 16. A unit test parses the externals file: the plugin URL pins a full
     commit sha, no `refreshPeriod`, only `piper.yazi` is extracted.
 17. Unit tests for the link script with a stub `mise` (prints a fixture
@@ -158,3 +157,43 @@ unit, render, system, run.sh if render needs the externals exclusion),
   external without extra checksum (decided with me, 2026-11-19, after the
   Renovate check above).
 - Plugins: only piper for now (decided with me).
+
+### Decided with the test writer
+
+21. **Owned font dir:** `${XDG_DATA_HOME:-~/.local/share}/fonts/ws`. Every
+    `.ttf`/`.otf` under each font's install dir is linked, variable fonts
+    included; `fc-cache` runs once, on the owned dir, after linking.
+22. **Finding the fonts:** `mise where <config key>` (a trailing
+    `@version` is allowed). The skip line contains "skip" and "font".
+23. **Asset selection:** nerd-fonts uses `asset_pattern` (a glob) that
+    matches only `NerdFontsSymbolsOnly.tar.xz`; optional for JetBrains
+    Mono. The lock's `url` per Linux platform ends in the selected asset.
+24. **Versions:** at least 2.304 and 3.5.1, pinned exactly.
+25. **Install check in the container:** `expect.yaml` gets
+    `mise-font-jetbrains-mono` and `mise-font-nerd-symbols` (Linux, every
+    form): `mise where <key>` holds a `.ttf`. So the container system test
+    checks the font install, not only the desktop link.
+26. **Font checks on desktop:** `fonts-jetbrains-mono` and
+    `fonts-nerd-symbols` read `fc-list : file family` and need the family
+    from a file under the owned dir.
+27. **Externals file:** `.toml` or `.toml.tmpl` are both accepted.
+28. **Regex managers:** fields from named groups or `<field>Template`;
+    file patterns via `managerFilePatterns` (regex or glob) or `fileMatch`;
+    node datasource `node-version` or `node`. The validator's node stays in
+    major 24 through a packageRule kept off mise (`matchManagers` without
+    `mise` or `matchFileNames` naming `ci.yml`) with an `allowedVersions`
+    of `<25`, `24.x`, `^24` or similar. The tests evaluate the regexes with
+    Go's RE2 (chezmoi template functions), close to but not identical with
+    Renovate's engine; the CI validator still checks the config.
+29. **Slice 6's packageRules** stay unchanged and in order (descriptions
+    ignored).
+30. **No downloads in render tests (corrects criterion 15):** with chezmoi
+    2.73.1, `--exclude externals` doesn't stop downloads (apply, managed,
+    diff, status and verify all fetch archive externals); only a target
+    left out by `.chezmoiignore` is skipped. So `.chezmoiignore` (or a
+    condition in a `.toml.tmpl`) drops the external when `.chezmoi.destDir`
+    differs from `.chezmoi.homeDir`, the same rule as the scripts'
+    destination guard. Tests block the network (`ws_block_network`) to
+    prove it, and seed chezmoi's cache with a fixture archive to test the
+    extraction; those depend on chezmoi's cache layout
+    (`<cache>/external/<sha256 of the URL>`).

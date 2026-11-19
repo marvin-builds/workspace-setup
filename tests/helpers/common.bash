@@ -72,6 +72,17 @@ EOF
     export PATH WS_GUARD_LOG
 }
 
+# ws_block_network: points every proxy variable at a closed local port, so
+# a download by chezmoi (an external) or another Go or curl client fails
+# at once with "connection refused" instead of reaching the network
+# (slice 7). Tests that must never download call it in setup().
+ws_block_network() {
+    for v in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; do
+        export "$v=http://127.0.0.1:9"
+    done
+    unset NO_PROXY no_proxy
+}
+
 # expect_guard_untouched: no guard stub was called in this test.
 expect_guard_untouched() {
     [ ! -s "$WS_GUARD_LOG" ] && return 0

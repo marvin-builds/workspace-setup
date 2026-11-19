@@ -699,7 +699,8 @@ require_mise_dropin() {
         expect_equal "mise ids on $(uname -s)" "" "$ids"
         return 0
     fi
-    expect_equal "mise ids" "apt-keyring-mise apt-sources-mise mise-node mise-path-once mise-python mise-starship mise-uv mise-versions mise-ya mise-yazi pkg-mise " "$ids"
+    # mise-font-*: slice 7, the fonts mise installs on every form.
+    expect_equal "mise ids" "apt-keyring-mise apt-sources-mise mise-font-jetbrains-mono mise-font-nerd-symbols mise-node mise-path-once mise-python mise-starship mise-uv mise-versions mise-ya mise-yazi pkg-mise " "$ids"
 }
 
 MISE_SMOKES="mise-node mise-python mise-uv mise-starship mise-yazi mise-ya mise-versions mise-path-once"

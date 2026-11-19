@@ -32,6 +32,13 @@
 # MISE_GITHUB_TOKEN passed in (CI) avoids GitHub rate limits; it must not
 # end up in any file under the home, and this script never prints it.
 #
+# Fonts and externals (slice 7, criterion 18): ws doctor checks that mise
+# installed both fonts from the lock (mise-font-*, every form) and that
+# the piper external was applied (yazi-piper); the rerun in idempotency
+# step 2 must leave mise's installs (mise_installs) and the plugin under
+# ~/.config (config_files) unchanged. Linking the fonts is desktop only
+# and covered by tests/unit/link-fonts.bats.
+#
 # Fake data only: owners octo-one and octo-two, name Test User.
 
 set -eu
